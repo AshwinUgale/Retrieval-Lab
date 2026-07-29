@@ -11,25 +11,29 @@ Two layers:
 import pytest
 
 from retrieval_lab.attribution import (
+    STAGE_BUDGET_CUTOFF,
     STAGE_CANDIDATE_GENERATION,
     STAGE_FINAL_CUTOFF,
     STAGE_FUSION,
     STAGE_REPRESENTATION,
+    STAGE_RERANKER_DEMOTION,
     StageOutputs,
     attribute,
 )
 from retrieval_lab.chunking import FixedSizeChunker
 from retrieval_lab.corpora.constructed import build_basic_corpus
 from retrieval_lab.corpora.planted import (
+    build_budget_cutoff_corpus,
     build_candidate_miss_corpus,
     build_fragmented_corpus,
     build_representation_corpus,
+    build_reranker_demotion_corpus,
 )
 from retrieval_lab.embedding import DeterministicEmbedder
 from retrieval_lab.gold import EvidenceSet, GoldAnswer, GoldSpan
 from retrieval_lab.models import Chunk, Config
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
-from retrieval_lab.retrieval import BM25Retriever, DenseRetriever
+from retrieval_lab.retrieval import BM25Retriever, DenseRetriever, LexicalReranker
 
 # --------------------------------------------------------------------------------------
 # Unit: hand-built StageOutputs -> exact stage verdicts
@@ -41,6 +45,10 @@ MISS_CHUNK = Chunk.make("DX", 0, 10, "?" * 10, chunker_spec="t")  # other doc, 0
 
 DENSE = Config(embed_model="e", chunker="c", retrieval="dense", top_k=1, candidate_n=5)
 HYBRID = Config(embed_model="e", chunker="c", retrieval="hybrid", top_k=1, candidate_n=5)
+RERANK = Config(embed_model="e", chunker="c", retrieval="dense", rerank="lexical",
+                top_k=1, candidate_n=5)
+BUDGET = Config(embed_model="e", chunker="c", retrieval="dense", top_k=2, candidate_n=5,
+                budget_tokens=100)
 
 
 def test_hit_attributes_to_no_stage():
@@ -95,6 +103,44 @@ def test_final_cutoff_failure():
     assert attribute(outs, GOLD, DENSE).stage == STAGE_FINAL_CUTOFF
 
 
+def test_reranker_demotion_failure():
+    # The reranker's full candidate_n input has the answer, but its top_k output does not.
+    outs = StageOutputs(
+        all_chunks=[GOLD_CHUNK, MISS_CHUNK],
+        candidate_union=[GOLD_CHUNK, MISS_CHUNK],
+        reranker_input=[GOLD_CHUNK, MISS_CHUNK],  # shortlist fed to the reranker has it
+        reranked=[MISS_CHUNK, GOLD_CHUNK],        # reranker demoted it
+        pre_final=[MISS_CHUNK, GOLD_CHUNK],
+        final=[MISS_CHUNK],                       # top_k=1 -> gold pushed out
+        dense_candidates=[GOLD_CHUNK, MISS_CHUNK],
+    )
+    assert attribute(outs, GOLD, RERANK).stage == STAGE_RERANKER_DEMOTION
+
+
+def test_budget_cutoff_failure():
+    # top_k satisfies gold, but the budget-packed subset does not.
+    outs = StageOutputs(
+        all_chunks=[GOLD_CHUNK, MISS_CHUNK],
+        candidate_union=[GOLD_CHUNK, MISS_CHUNK],
+        pre_final=[MISS_CHUNK, GOLD_CHUNK],
+        final=[MISS_CHUNK, GOLD_CHUNK],   # top_k has the answer
+        budget_packed=[MISS_CHUNK],       # ...but packing dropped it
+        dense_candidates=[GOLD_CHUNK, MISS_CHUNK],
+    )
+    assert attribute(outs, GOLD, BUDGET).stage == STAGE_BUDGET_CUTOFF
+
+
+def test_budget_hit_when_packed_subset_satisfies():
+    outs = StageOutputs(
+        all_chunks=[GOLD_CHUNK],
+        candidate_union=[GOLD_CHUNK],
+        pre_final=[GOLD_CHUNK], final=[GOLD_CHUNK],
+        budget_packed=[GOLD_CHUNK],  # packing kept the answer -> no failure
+        dense_candidates=[GOLD_CHUNK],
+    )
+    assert attribute(outs, GOLD, BUDGET).stage is None
+
+
 def test_branch_diagnostic_is_not_a_verdict_on_a_hit():
     # Dense branch missed but sparse found it; fusion recovers -> a hit, dense-miss reported.
     outs = StageOutputs(
@@ -113,7 +159,7 @@ def test_branch_diagnostic_is_not_a_verdict_on_a_hit():
 # --------------------------------------------------------------------------------------
 
 
-def _pipeline(docs, chunker, config):
+def _pipeline(docs, chunker, config, reranker=None):
     chunks = chunker.chunk_corpus(docs.values())
     dense = None
     sparse = None
@@ -121,7 +167,7 @@ def _pipeline(docs, chunker, config):
         dense = DenseRetriever(DeterministicEmbedder(dim=2048)).index(chunks)
     if config.retrieval in {"sparse", "hybrid"}:
         sparse = BM25Retriever().index(chunks)
-    return RetrievalPipeline(chunks, config, dense=dense, sparse=sparse)
+    return RetrievalPipeline(chunks, config, dense=dense, sparse=sparse, reranker=reranker)
 
 
 def test_recovery_clean_hits_on_basic_corpus():
@@ -174,8 +220,33 @@ def test_recovery_candidate_generation_failure():
     assert res.branch_diag == {"dense": False, "sparse": False}
 
 
+def test_recovery_reranker_demotion():
+    docs, query = build_reranker_demotion_corpus()
+    config = Config("det-hash", "fixed", "dense", rerank="lexical", top_k=1, candidate_n=10)
+    pipe = _pipeline(docs, FixedSizeChunker(chunk_size=200), config, reranker=LexicalReranker())
+    res = evaluate_query(query, pipe)
+    assert not res.hit
+    assert res.stage_attribution == STAGE_RERANKER_DEMOTION
+
+
+def test_recovery_budget_cutoff():
+    docs, query, budget = build_budget_cutoff_corpus()
+    config = Config("det-hash", "fixed", "dense", top_k=3, candidate_n=10, budget_tokens=budget)
+    pipe = _pipeline(docs, FixedSizeChunker(chunk_size=400), config)
+    res = evaluate_query(query, pipe)
+    assert not res.hit
+    assert res.stage_attribution == STAGE_BUDGET_CUTOFF
+
+
 @pytest.mark.parametrize("mode", ["dense", "sparse", "hybrid"])
 def test_pipeline_requires_the_right_retrievers(mode):
     config = Config("e", "c", mode)
     with pytest.raises(ValueError):
         RetrievalPipeline([], config)  # no retrievers supplied
+
+
+def test_pipeline_requires_reranker_when_config_asks_for_one():
+    config = Config("e", "c", "dense", rerank="lexical")
+    dense = DenseRetriever(DeterministicEmbedder(dim=64)).index([])
+    with pytest.raises(ValueError, match="reranker"):
+        RetrievalPipeline([], config, dense=dense)  # rerank requested, none supplied

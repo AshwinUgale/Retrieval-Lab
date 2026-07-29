@@ -28,21 +28,22 @@ def score_query(
     config_id: str,
     top_k: int,
     min_gold_coverage: float = DEFAULT_MIN_GOLD_COVERAGE,
+    final: Sequence[Chunk] | None = None,
 ) -> QueryResult:
     """Score one query given the chunks a config ranked (deepest-first, length >= top_k).
 
-    ``ranked`` should be the full ranked shortlist (e.g. ``candidate_n`` deep); ``top_k`` is
-    the final returned cutoff. Completion rank is measured over ``ranked`` so it can exceed
-    ``top_k`` (a gold chunk that ranking placed just past the cutoff), which is exactly the
-    signal a later "final cutoff" attribution reads.
+    ``ranked`` is the full ranked shortlist (e.g. ``candidate_n`` deep); completion rank is
+    measured over it so it can exceed ``top_k``. The **delivered context** — over which hit,
+    coverage, fragmentation, and retrieved-token count are computed — is ``final`` when given
+    (e.g. a budget-packed subset), otherwise ``ranked[:top_k]``.
     """
-    top = list(ranked[:top_k])
+    delivered = list(final) if final is not None else list(ranked[:top_k])
     return QueryResult(
         query_id=query.id,
         config_id=config_id,
-        hit=satisfies_gold(top, query.gold, min_gold_coverage),
-        single_chunk_coverage_by_span=single_chunk_coverage_by_span(top, query.gold),
-        fragmented_spans=fragmented_spans(top, query.gold, min_gold_coverage),
+        hit=satisfies_gold(delivered, query.gold, min_gold_coverage),
+        single_chunk_coverage_by_span=single_chunk_coverage_by_span(delivered, query.gold),
+        fragmented_spans=fragmented_spans(delivered, query.gold, min_gold_coverage),
         gold_completion_rank=gold_completion_rank(ranked, query.gold, min_gold_coverage),
-        retrieved_tokens=sum(count_tokens(c.text) for c in top),
+        retrieved_tokens=sum(count_tokens(c.text) for c in delivered),
     )

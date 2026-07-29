@@ -5,6 +5,7 @@ See ``PROJECTS-TECHNICAL-SPEC.md`` Part I for the authoritative design.
 """
 
 from retrieval_lab.attribution import AttributionResult, StageOutputs, attribute
+from retrieval_lab.budget import pack_by_budget
 from retrieval_lab.chunking import Chunker, FixedSizeChunker, RecursiveChunker
 from retrieval_lab.embedding import DeterministicEmbedder, Embedder, EmbeddingCache
 from retrieval_lab.gold import (
@@ -20,7 +21,14 @@ from retrieval_lab.gold import (
 )
 from retrieval_lab.models import Chunk, Config, Document, QueryResult, compute_chunk_id
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
-from retrieval_lab.retrieval import BM25Retriever, DenseRetriever, reciprocal_rank_fusion
+from retrieval_lab.retrieval import (
+    BM25Retriever,
+    CrossEncoderReranker,
+    DenseRetriever,
+    LexicalReranker,
+    Reranker,
+    reciprocal_rank_fusion,
+)
 from retrieval_lab.scoring import score_query
 
 __all__ = [
@@ -47,6 +55,10 @@ __all__ = [
     "DenseRetriever",
     "BM25Retriever",
     "reciprocal_rank_fusion",
+    "Reranker",
+    "LexicalReranker",
+    "CrossEncoderReranker",
+    "pack_by_budget",
     "score_query",
     "StageOutputs",
     "AttributionResult",

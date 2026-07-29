@@ -139,3 +139,59 @@ def build_candidate_miss_corpus() -> tuple[dict[str, Document], Query]:
         gold=substring_gold(docs["DANS"], answer),
     )
     return docs, query
+
+
+# --------------------------------------------------------------------------------------
+# Reranker demotion — a lexical reranker pushes the (morphologically-matched) answer out.
+# --------------------------------------------------------------------------------------
+
+
+def build_reranker_demotion_corpus() -> tuple[dict[str, Document], Query]:
+    """Dense retrieves the answer via char-n-gram overlap, but a lexical reranker demotes it.
+
+    The gold doc shares *inflected* forms with the query (``resetting``/``passwords``) that
+    the dense embedder's char n-grams match, but **no exact tokens** — so a shared-exact-term
+    reranker scores it zero while a distractor that repeats the query verbatim scores high.
+    With ``top_k=1`` the reranker pushes gold past the cutoff: a reranker demotion.
+    """
+    docs = {
+        "DANS": Document(id="DANS", text="Resetting passwords is quick and simple."),
+        "DDIST": Document(id="DDIST", text="reset the password reset the password reset."),
+        "DX": Document(id="DX", text="An unrelated note about bicycle tire pressure."),
+    }
+    query = Query(
+        id="QRR",
+        text="reset the password",
+        gold=whole_doc_gold(docs["DANS"]),
+    )
+    return docs, query
+
+
+# --------------------------------------------------------------------------------------
+# Budget cutoff — the answer is retrieved into top_k but too large for the token budget.
+# --------------------------------------------------------------------------------------
+
+
+def build_budget_cutoff_corpus() -> tuple[dict[str, Document], Query, int]:
+    """Answer doc comfortably retrieved into top_k, but larger than a tiny token budget.
+
+    Returns ``(docs, query, budget_tokens)``. Every document exceeds ``budget_tokens``, so the
+    whole-chunk packing policy admits nothing that satisfies gold — a loss attributable to the
+    budget policy alone, not to retrieval.
+    """
+    docs = {
+        "DBIG": Document(
+            id="DBIG",
+            text=(
+                "The quarterly revenue figure for the northern division was reported as "
+                "exactly four point two million dollars in the audited statement."
+            ),
+        ),
+        "DX": Document(id="DX", text="A short unrelated passage about garden composting."),
+    }
+    query = Query(
+        id="QBUD",
+        text="what was the quarterly revenue for the northern division",
+        gold=whole_doc_gold(docs["DBIG"]),
+    )
+    return docs, query, 4  # 4-token budget; the answer chunk is far larger

@@ -99,14 +99,16 @@ class Config:
     rerank: str | None = None
     top_k: int = 5
     candidate_n: int = 50
+    budget_tokens: int | None = None
 
     @property
     def id(self) -> str:
         """Stable, human-readable-ish config id used to key results and caches."""
         rr = self.rerank or "none"
+        budget = self.budget_tokens if self.budget_tokens is not None else "none"
         return (
             f"{self.embed_model}|{self.chunker}|{self.retrieval}|rerank={rr}"
-            f"|k={self.top_k}|n={self.candidate_n}"
+            f"|k={self.top_k}|n={self.candidate_n}|budget={budget}"
         )
 
 

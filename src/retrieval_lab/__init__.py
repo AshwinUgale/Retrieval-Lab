@@ -14,6 +14,7 @@ from retrieval_lab.chunking import (
     SemanticChunker,
 )
 from retrieval_lab.embedding import DeterministicEmbedder, Embedder, EmbeddingCache
+from retrieval_lab.geometry import geometry_report
 from retrieval_lab.gold import (
     EvidenceSet,
     GoldAnswer,
@@ -103,6 +104,7 @@ __all__ = [
     "pareto_frontier",
     "write_json",
     "read_json",
+    "geometry_report",
 ]
 
 __version__ = "0.0.0"

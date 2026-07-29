@@ -150,8 +150,27 @@ def _cmd_pareto(args: argparse.Namespace) -> int:
 
 
 def _cmd_geometry(args: argparse.Namespace) -> int:
-    print("geometry lenses (hubness / anisotropy / cross-model mismatch) arrive in a later "
-          "phase; see PROJECTS-TECHNICAL-SPEC.md §I.7.", file=sys.stderr)
+    from retrieval_lab.geometry import geometry_report, render_geometry
+
+    try:
+        documents = load_documents(args.corpus)
+    except (OSError, ValueError) as exc:
+        print(f"error: could not load corpus: {exc}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
+
+    cache = EmbeddingCache()
+    embedder = _make_embedder(args.embed_model, cache)
+    chunker = _make_chunker(args.chunker, embedder)
+    chunks = chunker.chunk_corpus(documents.values())
+    corpus_vecs = embedder.embed_passage([c.text for c in chunks])
+
+    query_vecs = None
+    if args.queries:
+        queries = load_queries(args.queries, documents, strict=False)
+        if queries:
+            query_vecs = embedder.embed_query([q.text for q in queries])
+
+    print(render_geometry(geometry_report(corpus_vecs, query_vecs)))
     return EXIT_OK
 
 
@@ -186,9 +205,11 @@ def build_parser() -> argparse.ArgumentParser:
     pareto.add_argument("--json", required=True, help="a results JSON from `run`")
     pareto.set_defaults(func=_cmd_pareto)
 
-    geometry = sub.add_parser("geometry", help="embedding-space diagnostics (later phase)")
-    geometry.add_argument("--corpus", required=False)
-    geometry.add_argument("--embed-model", required=False)
+    geometry = sub.add_parser("geometry", help="embedding-space diagnostics (risk indicators)")
+    geometry.add_argument("--corpus", required=True, help="documents JSONL")
+    geometry.add_argument("--embed-model", default="det", help="det, e5, or bge")
+    geometry.add_argument("--chunker", default="fixed", help="chunker for the corpus vectors")
+    geometry.add_argument("--queries", default=None, help="optional queries JSONL for mismatch")
     geometry.set_defaults(func=_cmd_geometry)
 
     return parser

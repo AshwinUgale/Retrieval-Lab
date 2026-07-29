@@ -19,6 +19,13 @@ from retrieval_lab.gold import (
     satisfies_gold,
     single_chunk_coverage_by_span,
 )
+from retrieval_lab.metrics import (
+    ConfigMetrics,
+    aggregate_config,
+    compare_configs,
+    validity_report,
+    wilson_interval,
+)
 from retrieval_lab.models import Chunk, Config, Document, QueryResult, compute_chunk_id
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
 from retrieval_lab.retrieval import (
@@ -65,6 +72,11 @@ __all__ = [
     "attribute",
     "RetrievalPipeline",
     "evaluate_query",
+    "aggregate_config",
+    "compare_configs",
+    "validity_report",
+    "wilson_interval",
+    "ConfigMetrics",
 ]
 
 __version__ = "0.0.0"

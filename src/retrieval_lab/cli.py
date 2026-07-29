@@ -18,7 +18,12 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from retrieval_lab.chunking import FixedSizeChunker, RecursiveChunker
+from retrieval_lab.chunking import (
+    FixedSizeChunker,
+    ParentChildChunker,
+    RecursiveChunker,
+    SemanticChunker,
+)
 from retrieval_lab.embedding import DeterministicEmbedder, EmbeddingCache
 from retrieval_lab.gold import OffsetVerificationError, load_documents, load_queries
 from retrieval_lab.report import read_json, render_explain, render_pareto, render_report, write_json
@@ -48,14 +53,21 @@ def _make_embedder(name: str, cache: EmbeddingCache):
     raise ValueError(f"unknown embed model {name!r} (use det, e5, or bge)")
 
 
-def _make_chunker(spec: str):
-    kind, _, size = spec.partition(":")
-    chunk_size = int(size) if size else 400
+def _make_chunker(spec: str, embedder):
+    kind, _, rest = spec.partition(":")
     if kind == "fixed":
-        return FixedSizeChunker(chunk_size=chunk_size)
+        return FixedSizeChunker(chunk_size=int(rest) if rest else 400)
     if kind == "recursive":
-        return RecursiveChunker(chunk_size=chunk_size)
-    raise ValueError(f"unknown chunker {spec!r} (use fixed[:size] or recursive[:size])")
+        return RecursiveChunker(chunk_size=int(rest) if rest else 400)
+    if kind == "semantic":
+        return SemanticChunker(embedder, breakpoint_percentile=float(rest) if rest else 75.0)
+    if kind in ("parentchild", "parent-child"):
+        parent, child = (rest.split("x") + ["300"])[:2] if rest else ("1200", "300")
+        return ParentChildChunker(parent_size=int(parent), child_size=int(child))
+    raise ValueError(
+        f"unknown chunker {spec!r} (use fixed[:size], recursive[:size], "
+        "semantic[:pct], or parentchild[:PxC])"
+    )
 
 
 def _make_reranker(name: str):
@@ -73,7 +85,8 @@ def _make_reranker(name: str):
 def _build_spec(args: argparse.Namespace) -> SweepSpec:
     cache = EmbeddingCache()
     embedders = {n: _make_embedder(n, cache) for n in _csv(args.embed_models)}
-    chunkers = {c: _make_chunker(c) for c in _csv(args.chunkers)}
+    default_embedder = next(iter(embedders.values()))  # used for semantic boundary detection
+    chunkers = {c: _make_chunker(c, default_embedder) for c in _csv(args.chunkers)}
     rerankers = dict(_make_reranker(r) for r in _csv(args.rerank))
     budgets: list[int | None] = [None]
     if args.budget_tokens:

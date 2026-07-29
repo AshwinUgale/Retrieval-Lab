@@ -106,6 +106,10 @@ def run_sweep(
         chunks = chunker.chunk_corpus(docs)
         sparse = BM25Retriever().index(chunks)  # once per chunker
 
+        # Parent-child chunkers return parents for retrieved children; the pipeline applies
+        # this to every stage set. Duck-typed so any chunker exposing `expand` participates.
+        return_expander = getattr(chunker, "expand", None)
+
         for emb_name, embedder in spec.embedders.items():
             dense = DenseRetriever(embedder).index(chunks)  # once per (embedder, chunker)
 
@@ -127,6 +131,7 @@ def run_sweep(
                             dense=dense if mode in _DENSE_MODES else None,
                             sparse=sparse if mode in _SPARSE_MODES else None,
                             reranker=reranker if rr_name else None,
+                            return_expander=return_expander,
                         )
                         results = [
                             evaluate_query(q, pipeline, min_gold_coverage) for q in queries

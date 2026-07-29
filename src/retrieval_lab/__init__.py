@@ -6,7 +6,13 @@ See ``PROJECTS-TECHNICAL-SPEC.md`` Part I for the authoritative design.
 
 from retrieval_lab.attribution import AttributionResult, StageOutputs, attribute
 from retrieval_lab.budget import pack_by_budget
-from retrieval_lab.chunking import Chunker, FixedSizeChunker, RecursiveChunker
+from retrieval_lab.chunking import (
+    Chunker,
+    FixedSizeChunker,
+    ParentChildChunker,
+    RecursiveChunker,
+    SemanticChunker,
+)
 from retrieval_lab.embedding import DeterministicEmbedder, Embedder, EmbeddingCache
 from retrieval_lab.gold import (
     EvidenceSet,
@@ -65,6 +71,8 @@ __all__ = [
     "Chunker",
     "FixedSizeChunker",
     "RecursiveChunker",
+    "SemanticChunker",
+    "ParentChildChunker",
     "Embedder",
     "EmbeddingCache",
     "DeterministicEmbedder",

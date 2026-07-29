@@ -9,7 +9,7 @@ in here in Phase 3.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from retrieval_lab.attribution import StageOutputs, attribute
 from retrieval_lab.budget import pack_by_budget
@@ -50,6 +50,7 @@ class RetrievalPipeline:
         dense: DenseRetriever | None = None,
         sparse: BM25Retriever | None = None,
         reranker: Reranker | None = None,
+        return_expander: Callable[[Sequence[Chunk]], list[Chunk]] | None = None,
         rrf_c: int = DEFAULT_RRF_C,
     ) -> None:
         self.chunks = list(chunks)
@@ -57,6 +58,10 @@ class RetrievalPipeline:
         self.dense = dense
         self.sparse = sparse
         self.reranker = reranker
+        # Maps ranked indexed units to the units actually returned (e.g. parent-child:
+        # children -> parents). Identity when None. Applied to every stage set so coverage,
+        # attribution, and budgeting all operate on the returned unit.
+        self.return_expander = return_expander
         self.rrf_c = rrf_c
         if config.retrieval in _DENSE_MODES and dense is None:
             raise ValueError(f"{config.retrieval!r} needs a dense retriever")
@@ -86,15 +91,20 @@ class RetrievalPipeline:
             shortlist = fused
 
         # Optional reranker reorders the whole candidate_n shortlist before the cutoff.
-        reranker_input = None
-        reranked = None
+        reranker_input_children = None
+        reranked_children = None
         if cfg.rerank and self.reranker is not None:
-            reranker_input = shortlist
-            reranked = self.reranker.rerank(query_text, shortlist)
-            pre_final = reranked
+            reranker_input_children = shortlist
+            reranked_children = self.reranker.rerank(query_text, shortlist)
+            pre_children = reranked_children
         else:
-            pre_final = shortlist
+            pre_children = shortlist
 
+        # Expand every set to the returned unit (identity unless a return_expander is set,
+        # e.g. parent-child: children -> parents), so coverage/attribution/budget are all
+        # computed on what is actually returned.
+        expand = self.return_expander or (lambda xs: list(xs))
+        pre_final = expand(pre_children)
         final = pre_final[: cfg.top_k]
 
         # Optional budget packing produces the delivered subset of the final top_k.
@@ -103,15 +113,17 @@ class RetrievalPipeline:
             budget_packed, _ = pack_by_budget(final, cfg.budget_tokens)
 
         return StageOutputs(
-            all_chunks=self.chunks,
-            candidate_union=union,
+            all_chunks=expand(self.chunks),
+            candidate_union=expand(union),
             pre_final=pre_final,
             final=final,
-            dense_candidates=dense_c,
-            sparse_candidates=sparse_c,
-            fused=fused,
-            reranker_input=reranker_input,
-            reranked=reranked,
+            dense_candidates=None if dense_c is None else expand(dense_c),
+            sparse_candidates=None if sparse_c is None else expand(sparse_c),
+            fused=None if fused is None else expand(fused),
+            reranker_input=(
+                None if reranker_input_children is None else expand(reranker_input_children)
+            ),
+            reranked=None if reranked_children is None else expand(reranked_children),
             budget_packed=budget_packed,
         )
 

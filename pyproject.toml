@@ -24,8 +24,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Sparse (BM25) retrieval.
-sparse = ["rank-bm25>=0.2.2"]
 # Real embedding models (e5, bge, ...). Large downloads; opt-in.
 real-embed = ["sentence-transformers>=2.2"]
 # Cross-encoder reranking.
@@ -35,7 +33,6 @@ ann = ["hnswlib>=0.7"]
 # Everything needed to run the full test suite.
 dev = [
     "pytest>=7",
-    "rank-bm25>=0.2.2",
     "ruff>=0.4",
 ]
 

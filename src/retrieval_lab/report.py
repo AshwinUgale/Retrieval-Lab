@@ -15,6 +15,7 @@ environment-specific, never as transferable quality).
 
 from __future__ import annotations
 
+import html
 import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -68,7 +69,9 @@ def sweep_from_dict(d: dict) -> SweepResult:
 
 
 def write_json(sweep: SweepResult, path: str | Path) -> None:
-    Path(path).write_text(json.dumps(sweep_to_dict(sweep), indent=2), encoding="utf-8")
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(sweep_to_dict(sweep), indent=2), encoding="utf-8")
 
 
 def read_json(path: str | Path) -> SweepResult:
@@ -198,3 +201,93 @@ def render_explain(sweep: SweepResult, query_id: str) -> str:
     if not found:
         return f"explain — no query with id {query_id!r} in this run."
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------------------
+# Self-contained HTML report
+# --------------------------------------------------------------------------------------
+
+
+def _h(x: object) -> str:
+    return html.escape(str(x))
+
+
+def render_html(sweep: SweepResult, by: str = "hit_rate") -> str:
+    """A single self-contained HTML page (inline CSS, theme-aware) for a ``SweepResult``."""
+    def ci(c: tuple[float, float] | None) -> str:
+        return "<span class=gate>n&lt;gate</span>" if c is None else f"[{c[0]:.2f}, {c[1]:.2f}]"
+
+    rows = []
+    for m in sweep.ranked(by):
+        stages = ", ".join(f"{_h(k)}:{v}" for k, v in sorted(m.stage_breakdown.items())) or "—"
+        frag = m.fragmented_queries or "—"
+        rows.append(
+            f"<tr><td class=cfg>{_h(m.config_id)}</td><td>{m.n}</td>"
+            f"<td>{m.hit_rate:.2f} <span class=ci>{ci(m.hit_rate_ci)}</span></td>"
+            f"<td>{m.mrr:.2f}</td><td>{stages}</td><td>{frag}</td></tr>"
+        )
+
+    pareto_rows = [
+        f"<tr><td class=cfg>{_h(p.config_id)}</td><td>{p.hit_rate:.2f}</td>"
+        f"<td>{p.mrr:.2f}</td><td>{p.avg_retrieved_tokens:.1f}</td></tr>"
+        for p in pareto_frontier(sweep)
+    ]
+
+    validity = (
+        "".join(f"<li>{_h(n)}</li>" for n in sweep.validity.notes)
+        if sweep.validity.notes else "<li>ok — aggregate verdicts permitted.</li>"
+    )
+
+    return f"""<!doctype html>
+<html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>Retrieval Lab report</title>
+<style>
+  :root {{ color-scheme: light dark; --bg:#fff; --fg:#1a1a1a; --muted:#666; --line:#e2e2e2;
+           --head:#f5f5f5; --accent:#2563eb; }}
+  @media (prefers-color-scheme: dark) {{ :root {{ --bg:#15171a; --fg:#e8e8e8; --muted:#9aa0a6;
+           --line:#2c2f33; --head:#1d2024; --accent:#5b9dff; }} }}
+  body {{ font: 15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg);
+          margin:0; padding:2rem; }}
+  h1 {{ font-size:1.4rem; margin:0 0 .25rem; }}
+  .sub {{ color:var(--muted); margin:0 0 1.5rem; }}
+  .wrap {{ overflow-x:auto; }}
+  table {{ border-collapse:collapse; width:100%; margin:.5rem 0 2rem; font-size:14px; }}
+  th, td {{ text-align:left; padding:.5rem .7rem; border-bottom:1px solid var(--line);
+            white-space:nowrap; }}
+  th {{ background:var(--head); position:sticky; top:0; }}
+  td.cfg {{ font-family:ui-monospace, monospace; font-size:12.5px; white-space:normal; }}
+  tr:first-child td {{ font-weight:600; }}
+  .ci {{ color:var(--muted); font-size:12px; }}
+  .gate {{ color:var(--muted); font-style:italic; }}
+  ul {{ padding-left:1.2rem; }} li {{ margin:.2rem 0; }}
+  .note {{ color:var(--muted); font-size:13px; }}
+</style></head><body>
+<h1>Retrieval Lab</h1>
+<p class=sub>{len(sweep.metrics)} configs on your query set — {sweep.n_queries} queries,
+   {sweep.n_docs} docs. Best <em>on this query set</em>, never “best”: a thin or biased set
+   biases the winner.</p>
+
+<h2>Ranked configs</h2>
+<div class=wrap><table>
+<tr><th>config</th><th>n</th><th>hit@k (95% CI)</th><th>MRR</th><th>failure stages</th>
+    <th>fragmented</th></tr>
+{''.join(rows)}
+</table></div>
+
+<h2>Pareto frontier <span class=note>— quality × retrieved tokens (latency/cost added only
+    when measured; environment-specific)</span></h2>
+<div class=wrap><table>
+<tr><th>config</th><th>hit@k</th><th>MRR</th><th>avg tokens</th></tr>
+{''.join(pareto_rows)}
+</table></div>
+
+<h2>Validity</h2>
+<ul>{validity}</ul>
+</body></html>"""
+
+
+def write_html(sweep: SweepResult, path: str | Path, by: str = "hit_rate") -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(render_html(sweep, by), encoding="utf-8")

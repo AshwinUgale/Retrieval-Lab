@@ -21,33 +21,67 @@ and the attribution engine, so they can never disagree.
 3. Attribution needs a stage-decomposable pipeline; black-box retrievers get scores only.
 4. Latency/cost axes are environment-specific; only quality and token-budget axes transfer.
 
-## Status
-
-Under active construction, built in phases (see
-`aie/roadmap/retrieval-lab/progress/STATUS.md`). Done so far:
-
-- **Phase 0** — ground-truth foundation: span-level gold, fail-closed offset verification,
-  the union-coverage hit predicate.
-- **Phase 1** — dense slice: keyless deterministic embedder + cache, fixed/recursive
-  chunkers, exact dense retrieval, scorer.
-- **Phase 2** — hybrid + attribution: BM25, RRF fusion, and the DAG stage-attribution
-  engine, validated by a planted-failure recovery suite.
-
-## Install (development)
+## Quickstart
 
 ```bash
 pip install -e ".[dev]"
+retrieval-lab demo            # runs a keyless demo corpus end to end, writes report.html
 ```
 
-Core is numpy + stdlib only — dense, BM25, hybrid, and attribution all run keyless. Heavy
-paths are opt-in extras: `[real-embed]` (e5/bge via sentence-transformers), `[rerank]`
-(cross-encoder), `[ann]` (HNSW).
+The `demo` needs no data and no downloads. On your own corpus:
+
+```bash
+retrieval-lab run --corpus docs.jsonl --queries queries.jsonl \
+    --embed-models det --chunkers fixed,recursive --retrieval dense,hybrid \
+    --rerank none,lexical --top-k 5 --candidate-n 50 \
+    --json out.json --html report.html --fail-under 0.8    # --fail-under = CI quality gate
+
+retrieval-lab explain  --json out.json --query-id Q17      # per-stage failure attribution
+retrieval-lab pareto   --json out.json                     # quality × retrieved-tokens frontier
+retrieval-lab geometry --corpus docs.jsonl                 # embedding-space risk indicators
+```
+
+- **`docs.jsonl`** — one `{"id", "text"}` per line.
+- **`queries.jsonl`** — one query per line with **source-span gold** (character offsets +
+  `quoted_text`, optionally a `source_version` hash). Offsets are verified at load and the
+  tool **fails closed** on any drift.
+- Exit codes for CI: `0` ok, `1` baseline-broken or `--fail-under` gate missed, `2` input /
+  gold-verification error.
+
+## Data model in one breath
+
+Gold is defined over **source-document character spans**, never chunk indices — because
+changing the chunker changes the chunks. A query is a **hit** when the union of retrieved
+chunks covers a required span to ≥ 80%; the *same* predicate drives the scorer and the
+attribution engine, so they can never disagree. When a query misses, attribution names the
+earliest failing DAG stage: `representation`, `candidate_generation`, `fusion`,
+`reranker_demotion`, `final_cutoff`, or `budget_cutoff`.
+
+## Install & extras
+
+Core is numpy + stdlib only — dense, BM25, hybrid, attribution, metrics, reporting, and the
+CLI all run keyless. Heavy paths are opt-in extras:
+
+| extra | adds |
+|-------|------|
+| `[real-embed]` | real e5 / bge embedders via sentence-transformers |
+| `[rerank]` | cross-encoder reranker |
+| `[ann]` | HNSW approximate dense index |
+| `[dev]` | pytest + ruff |
 
 ## Test
 
 ```bash
-python -m pytest
+python -m pytest        # keyless, network-free; includes the planted-failure recovery suite
+ruff check src tests
 ```
 
-The test/validation path is keyless and network-free by design — a deterministic embedder
-keeps the constructed-ground-truth recovery suite reproducible in CI.
+The whole test/validation path is keyless and deterministic — a hashing-trick embedder keeps
+the constructed-ground-truth recovery suite reproducible in CI. Real models and HNSW have
+opt-in tests (`RLAB_REAL_EMBED=1`; install `[ann]`).
+
+## Status
+
+Built in phases; see `aie/roadmap/retrieval-lab/progress/STATUS.md`. Phases 0–8 complete:
+foundation → dense → hybrid+attribution → rerank/budget → metrics → sweep+real models →
+report/CLI → semantic/parent-child/geometry/ANN → productization.

@@ -77,3 +77,18 @@ def test_renderers_produce_meaningful_text():
     explain = render_explain(sweep, "Q1")
     assert "Q1" in explain
     assert "no query with id" in render_explain(sweep, "NOPE")
+
+
+def test_html_report_is_self_contained(tmp_path):
+    from retrieval_lab.report import render_html, write_html
+
+    sweep = _sweep()
+    html = render_html(sweep)
+    assert html.startswith("<!doctype html>")
+    assert "Retrieval Lab" in html and "Pareto" in html
+    # Self-contained: no external resource references.
+    assert "http://" not in html and "https://" not in html
+    assert "<script" not in html
+    p = tmp_path / "nested" / "report.html"
+    write_html(sweep, p)  # creates parent dirs
+    assert p.exists() and p.read_text(encoding="utf-8").startswith("<!doctype html>")

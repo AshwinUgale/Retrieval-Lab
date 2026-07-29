@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from retrieval_lab.chunking import (
     FixedSizeChunker,
@@ -26,7 +27,14 @@ from retrieval_lab.chunking import (
 )
 from retrieval_lab.embedding import DeterministicEmbedder, EmbeddingCache
 from retrieval_lab.gold import OffsetVerificationError, load_documents, load_queries
-from retrieval_lab.report import read_json, render_explain, render_pareto, render_report, write_json
+from retrieval_lab.report import (
+    read_json,
+    render_explain,
+    render_pareto,
+    render_report,
+    write_html,
+    write_json,
+)
 from retrieval_lab.retrieval import LexicalReranker
 from retrieval_lab.sweep import SweepSpec, run_sweep
 
@@ -123,6 +131,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.json:
         write_json(sweep, args.json)
         print(f"\nWrote {args.json}")
+    if args.html:
+        write_html(sweep, args.html)
+        print(f"Wrote {args.html}")
 
     if sweep.validity.baseline_broken:
         print("\nCI: baseline broken (zero recall under all configs).", file=sys.stderr)
@@ -147,6 +158,23 @@ def _cmd_pareto(args: argparse.Namespace) -> int:
     sweep = read_json(args.json)
     print(render_pareto(sweep))
     return EXIT_OK
+
+
+def _cmd_demo(args: argparse.Namespace) -> int:
+    """Run the keyless constructed corpus end to end — no user data, no downloads."""
+    from retrieval_lab.corpora.constructed import dump_basic_corpus_jsonl
+
+    out_dir = args.out_dir or "rlab-demo"
+    docs_path, queries_path = dump_basic_corpus_jsonl(out_dir)
+    print(f"Wrote demo corpus to {docs_path} and {queries_path}\n")
+    demo_args = argparse.Namespace(
+        corpus=str(docs_path), queries=str(queries_path),
+        embed_models="det", chunkers="fixed,recursive", retrieval="dense,hybrid",
+        rerank="none,lexical", top_k=3, candidate_n=10, budget_tokens="",
+        min_sample=1, seed=0, top=None, fail_under=None,
+        json=str(Path(out_dir) / "out.json"), html=str(Path(out_dir) / "report.html"),
+    )
+    return _cmd_run(demo_args)
 
 
 def _cmd_geometry(args: argparse.Namespace) -> int:
@@ -194,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--fail-under", type=float, default=None,
                      help="exit non-zero if the best hit@k is below this")
     run.add_argument("--json", default=None, help="write full results here")
+    run.add_argument("--html", default=None, help="write a self-contained HTML report here")
     run.set_defaults(func=_cmd_run)
 
     explain = sub.add_parser("explain", help="per-stage attribution for one query")
@@ -204,6 +233,10 @@ def build_parser() -> argparse.ArgumentParser:
     pareto = sub.add_parser("pareto", help="Pareto frontier over quality x tokens")
     pareto.add_argument("--json", required=True, help="a results JSON from `run`")
     pareto.set_defaults(func=_cmd_pareto)
+
+    demo = sub.add_parser("demo", help="run the keyless demo corpus end to end (no inputs)")
+    demo.add_argument("--out-dir", default=None, help="where to write the demo corpus + report")
+    demo.set_defaults(func=_cmd_demo)
 
     geometry = sub.add_parser("geometry", help="embedding-space diagnostics (risk indicators)")
     geometry.add_argument("--corpus", required=True, help="documents JSONL")

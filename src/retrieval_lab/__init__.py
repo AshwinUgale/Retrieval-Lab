@@ -39,8 +39,10 @@ from retrieval_lab.report import (
     pareto_frontier,
     read_json,
     render_explain,
+    render_html,
     render_pareto,
     render_report,
+    write_html,
     write_json,
 )
 from retrieval_lab.retrieval import (
@@ -108,6 +110,8 @@ __all__ = [
     "pareto_frontier",
     "write_json",
     "read_json",
+    "render_html",
+    "write_html",
     "geometry_report",
 ]
 

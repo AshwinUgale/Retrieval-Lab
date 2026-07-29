@@ -73,3 +73,23 @@ def test_unknown_embed_model_is_an_error(demo):
     with pytest.raises(ValueError):
         main(["run", "--corpus", str(docs), "--queries", str(queries),
               "--embed-models", "nonexistent", "--min-sample", "1"])
+
+
+def test_run_writes_html(demo, tmp_path):
+    docs, queries, _tmp = demo
+    html = tmp_path / "report.html"
+    code = main(["run", "--corpus", str(docs), "--queries", str(queries),
+                 "--min-sample", "1", "--html", str(html)])
+    assert code == EXIT_OK
+    assert html.exists()
+    assert html.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_demo_command_runs_end_to_end(tmp_path):
+    out = tmp_path / "demo"
+    code = main(["demo", "--out-dir", str(out)])
+    assert code == EXIT_OK
+    assert (out / "docs.jsonl").exists()
+    assert (out / "queries.jsonl").exists()
+    assert (out / "out.json").exists()
+    assert (out / "report.html").exists()

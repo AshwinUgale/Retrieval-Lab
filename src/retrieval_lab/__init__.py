@@ -44,11 +44,13 @@ from retrieval_lab.report import (
     write_json,
 )
 from retrieval_lab.retrieval import (
+    ANNDenseRetriever,
     BM25Retriever,
     CrossEncoderReranker,
     DenseRetriever,
     LexicalReranker,
     Reranker,
+    ann_vs_exact_recall,
     reciprocal_rank_fusion,
 )
 from retrieval_lab.scoring import score_query
@@ -83,6 +85,8 @@ __all__ = [
     "Reranker",
     "LexicalReranker",
     "CrossEncoderReranker",
+    "ANNDenseRetriever",
+    "ann_vs_exact_recall",
     "pack_by_budget",
     "score_query",
     "StageOutputs",

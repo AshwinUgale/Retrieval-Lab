@@ -24,9 +24,9 @@ class DenseRetriever:
         self._matrix: np.ndarray | None = None
 
     def index(self, chunks: Iterable[Chunk]) -> DenseRetriever:
-        """Embed and store the chunk corpus. Returns self for chaining."""
+        """Embed and store the chunk corpus (as passages). Returns self for chaining."""
         self._chunks = list(chunks)
-        self._matrix = self.embedder.embed([c.text for c in self._chunks])
+        self._matrix = self.embedder.embed_passage([c.text for c in self._chunks])
         return self
 
     def retrieve_scored(self, query: str, k: int) -> list[tuple[Chunk, float]]:
@@ -38,7 +38,7 @@ class DenseRetriever:
             raise RuntimeError("index() must be called before retrieve")
         if not self._chunks or k <= 0:
             return []
-        qv = self.embedder.embed_one(query)
+        qv = self.embedder.embed_query([query])[0]
         scores = self._matrix @ qv
         order = np.argsort(-scores, kind="stable")[:k]
         return [(self._chunks[i], float(scores[i])) for i in order]

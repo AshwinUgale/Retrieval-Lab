@@ -92,3 +92,13 @@ class Embedder(ABC):
     def embed_one(self, text: str) -> np.ndarray:
         """Convenience: embed a single text and return its 1-D vector."""
         return self.embed([text])[0]
+
+    # Query vs passage roles. Symmetric embedders (e.g. the deterministic one) treat them
+    # identically; asymmetric models (e5, bge) override to apply the right prefix. The prefix
+    # is applied *before* caching, so a query and a passage of the same raw text never share a
+    # cache entry.
+    def embed_query(self, texts: Sequence[str]) -> np.ndarray:
+        return self.embed(texts)
+
+    def embed_passage(self, texts: Sequence[str]) -> np.ndarray:
+        return self.embed(texts)

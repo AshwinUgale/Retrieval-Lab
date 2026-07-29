@@ -37,6 +37,7 @@ from retrieval_lab.retrieval import (
     reciprocal_rank_fusion,
 )
 from retrieval_lab.scoring import score_query
+from retrieval_lab.sweep import SweepResult, SweepSpec, run_sweep
 
 __all__ = [
     "Document",
@@ -77,6 +78,9 @@ __all__ = [
     "validity_report",
     "wilson_interval",
     "ConfigMetrics",
+    "SweepSpec",
+    "SweepResult",
+    "run_sweep",
 ]
 
 __version__ = "0.0.0"

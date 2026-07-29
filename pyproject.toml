@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "retrieval-lab"
+version = "0.0.0"
+description = "Corpus-specific retrieval benchmark and deterministic stage-level failure-attribution engine for RAG pipelines."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Retrieval Lab" }]
+keywords = ["retrieval", "rag", "benchmark", "evaluation", "ir", "attribution"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+# Light core: numpy + stdlib only. Heavy integrations live behind extras.
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# Sparse (BM25) retrieval.
+sparse = ["rank-bm25>=0.2.2"]
+# Real embedding models (e5, bge, ...). Large downloads; opt-in.
+real-embed = ["sentence-transformers>=2.2"]
+# Cross-encoder reranking.
+rerank = ["sentence-transformers>=2.2"]
+# Approximate nearest-neighbour dense index.
+ann = ["hnswlib>=0.7"]
+# Everything needed to run the full test suite.
+dev = [
+    "pytest>=7",
+    "rank-bm25>=0.2.2",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+retrieval-lab = "retrieval_lab.cli:main"
+
+[project.urls]
+Homepage = "https://example.invalid/retrieval-lab"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/retrieval_lab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# Run the suite from a source checkout without an editable install.
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

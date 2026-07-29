@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Retrieval Lab runtime artifacts
+.rlab_cache/
+*.rlab.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

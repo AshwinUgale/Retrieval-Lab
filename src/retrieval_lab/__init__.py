@@ -28,6 +28,14 @@ from retrieval_lab.metrics import (
 )
 from retrieval_lab.models import Chunk, Config, Document, QueryResult, compute_chunk_id
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
+from retrieval_lab.report import (
+    pareto_frontier,
+    read_json,
+    render_explain,
+    render_pareto,
+    render_report,
+    write_json,
+)
 from retrieval_lab.retrieval import (
     BM25Retriever,
     CrossEncoderReranker,
@@ -81,6 +89,12 @@ __all__ = [
     "SweepSpec",
     "SweepResult",
     "run_sweep",
+    "render_report",
+    "render_pareto",
+    "render_explain",
+    "pareto_frontier",
+    "write_json",
+    "read_json",
 ]
 
 __version__ = "0.0.0"

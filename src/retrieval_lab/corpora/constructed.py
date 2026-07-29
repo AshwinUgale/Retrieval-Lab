@@ -8,7 +8,10 @@ Phase 1 dense slice end to end; Phase 2 adds a corpus with *planted* stage failu
 
 from __future__ import annotations
 
-from retrieval_lab.gold import EvidenceSet, GoldAnswer, GoldSpan, Query
+import json
+from pathlib import Path
+
+from retrieval_lab.gold import EvidenceSet, GoldAnswer, GoldSpan, Query, query_to_dict
 from retrieval_lab.hashing import content_hash
 from retrieval_lab.models import Document
 
@@ -76,3 +79,26 @@ def span_in(doc: Document, needle: str) -> GoldSpan:
 
 def _gold_of(doc: Document, needle: str) -> GoldAnswer:
     return GoldAnswer((EvidenceSet((span_in(doc, needle),)),))
+
+
+def dump_basic_corpus_jsonl(directory: str | Path) -> tuple[Path, Path]:
+    """Write the basic corpus to ``docs.jsonl`` + ``queries.jsonl`` (a keyless CLI demo).
+
+    Returns the two paths. Gold offsets/versions are exact by construction, so the written
+    files load and verify cleanly.
+    """
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    documents, queries = build_basic_corpus()
+
+    docs_path = directory / "docs.jsonl"
+    with docs_path.open("w", encoding="utf-8") as fh:
+        for doc in documents.values():
+            fh.write(json.dumps({"id": doc.id, "text": doc.text}) + "\n")
+
+    queries_path = directory / "queries.jsonl"
+    with queries_path.open("w", encoding="utf-8") as fh:
+        for q in queries:
+            fh.write(json.dumps(query_to_dict(q)) + "\n")
+
+    return docs_path, queries_path

@@ -310,6 +310,30 @@ def query_from_dict(d: dict) -> Query:
     )
 
 
+def _gold_span_to_dict(s: GoldSpan) -> dict:
+    d = {"source_id": s.source_id, "start": s.start, "end": s.end, "quoted_text": s.quoted_text}
+    if s.source_version is not None:
+        d["source_version"] = s.source_version
+    return d
+
+
+def gold_to_dict(gold: GoldAnswer) -> dict:
+    return {
+        "alternatives": [
+            {"required_spans": [_gold_span_to_dict(s) for s in alt.required_spans]}
+            for alt in gold.alternatives
+        ]
+    }
+
+
+def query_to_dict(query: Query) -> dict:
+    """Serialize a ``Query`` back to a JSONL-ready dict (inverse of ``query_from_dict``)."""
+    d = {"id": query.id, "text": query.text, "gold": gold_to_dict(query.gold)}
+    if query.meta:
+        d["meta"] = query.meta
+    return d
+
+
 def load_documents(path: str | Path) -> dict[str, Document]:
     """Load a corpus from JSONL records ``{"id", "text", "meta"?}`` into an id→Document map."""
     documents: dict[str, Document] = {}

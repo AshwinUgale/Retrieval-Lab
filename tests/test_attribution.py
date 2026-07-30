@@ -117,6 +117,23 @@ def test_reranker_demotion_failure():
     assert attribute(outs, GOLD, RERANK).stage == STAGE_RERANKER_DEMOTION
 
 
+def test_final_cutoff_never_returned_under_a_reranker():
+    # Hardening: even with an inconsistent hand-built input (reranker_input misses), a
+    # reranker config must never be attributed to final_cutoff, and a miss must never map to
+    # stage None. The returned unit came through the reranker, so it's a reranker demotion.
+    outs = StageOutputs(
+        all_chunks=[GOLD_CHUNK, MISS_CHUNK],
+        candidate_union=[GOLD_CHUNK, MISS_CHUNK],
+        reranker_input=[MISS_CHUNK],   # deliberately inconsistent: input misses
+        reranked=[MISS_CHUNK],
+        pre_final=[MISS_CHUNK], final=[MISS_CHUNK],
+        dense_candidates=[GOLD_CHUNK, MISS_CHUNK],
+    )
+    res = attribute(outs, GOLD, RERANK)
+    assert res.stage == STAGE_RERANKER_DEMOTION
+    assert res.stage is not None  # invariant: a miss always attributes to some stage
+
+
 def test_budget_cutoff_failure():
     # top_k satisfies gold, but the budget-packed subset does not.
     outs = StageOutputs(

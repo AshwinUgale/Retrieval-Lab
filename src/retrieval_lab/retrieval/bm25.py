@@ -72,7 +72,9 @@ class BM25Retriever:
         """
         if not self._chunks or k <= 0:
             return []
-        q_terms = word_tokens(query)
+        # Score over DISTINCT query terms — accidental repetition in the query must not
+        # double-weight a term (document-side term frequency is handled by the k1 saturation).
+        q_terms = list(dict.fromkeys(word_tokens(query)))
         scored = [(i, self._score_doc(i, q_terms)) for i in range(len(self._chunks))]
         scored = [(i, s) for i, s in scored if s > 0.0]
         # Stable sort by descending score; ties keep ascending corpus index.

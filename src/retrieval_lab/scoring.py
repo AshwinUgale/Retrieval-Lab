@@ -2,8 +2,9 @@
 
 The scorer is thin on purpose — all the hit logic lives in ``gold.satisfies_gold`` and its
 helpers, which the attribution engine also calls. The scorer just applies them at the right
-cutoffs: hit and single-chunk / fragmentation signals over the returned ``top_k`` context,
-completion rank over the full ranked list.
+cutoffs: hit and single-chunk / fragmentation signals over the **delivered** context (the
+returned ``top_k``, or the budget-packed subset when a budget applies), and completion rank
+over the full ranked list.
 """
 
 from __future__ import annotations

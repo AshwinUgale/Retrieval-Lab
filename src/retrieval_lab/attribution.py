@@ -115,11 +115,15 @@ def attribute(
     if config.retrieval == "hybrid" and outs.fused is not None and not sg(outs.fused):
         return AttributionResult(STAGE_FUSION, branch)
 
-    # 4. Reranker demotion — the reranker's full candidate_n input had it, but its top_k
-    #    output does not (the reranker pushed the gold chunk past the cutoff). Tested against
-    #    the FULL shortlist input, not a pre-rerank top-k.
+    # 4. Reranker demotion — with a reranker configured, the returned top_k is produced by
+    #    the reranker reordering its full candidate_n input. Any surviving miss here is the
+    #    reranker pushing the gold chunk past the cutoff (upstream candidate/fusion failures
+    #    were already returned above, so control only reaches here with the reranker's input
+    #    satisfying gold). Enforcing this — rather than relying on the pipeline's set
+    #    relationships — keeps `final_cutoff` unreachable under a reranker and preserves the
+    #    hit⟺stage invariant even for adversarial or future inputs.
     if config.rerank and outs.reranker_input is not None:
-        if sg(outs.reranker_input) and not sg(outs.final):
+        if not sg(outs.final):
             return AttributionResult(STAGE_RERANKER_DEMOTION, branch)
 
     # 5. Final cutoff — (no reranker) ranking placed a gold chunk just past top_k.

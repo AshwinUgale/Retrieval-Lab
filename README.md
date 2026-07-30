@@ -25,10 +25,15 @@ and the attribution engine, so they can never disagree.
 
 ```bash
 pip install -e ".[dev]"
-retrieval-lab demo            # runs a keyless demo corpus end to end, writes report.html
+retrieval-lab demo            # realistic keyless demo: configs diverge, writes report.html
+retrieval-lab demo --dataset basic     # 4-doc sanity corpus (everything hits)
 ```
 
-The `demo` needs no data and no downloads. On your own corpus:
+`demo` needs no data and no downloads. The default `realistic` dataset is a fictional
+product's documentation with hard queries, so the report actually shows the differentiator —
+hit@k ranging ~0.44–0.94 across configs, with failures attributed to `candidate_generation`,
+`fusion`, `reranker_demotion`, and `final_cutoff`, plus fragmentation under small chunks. On
+your own corpus:
 
 ```bash
 retrieval-lab run --corpus docs.jsonl --queries queries.jsonl \

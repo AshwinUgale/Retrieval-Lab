@@ -161,18 +161,31 @@ def _cmd_pareto(args: argparse.Namespace) -> int:
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
-    """Run the keyless constructed corpus end to end — no user data, no downloads."""
-    from retrieval_lab.corpora.constructed import dump_basic_corpus_jsonl
+    """Run a keyless demo corpus end to end — no user data, no downloads.
 
+    ``basic`` is a 4-doc sanity corpus (everything hits); ``realistic`` is a larger
+    documentation corpus where configs genuinely diverge and queries fail at different stages.
+    """
     out_dir = args.out_dir or "rlab-demo"
-    docs_path, queries_path = dump_basic_corpus_jsonl(out_dir)
-    print(f"Wrote demo corpus to {docs_path} and {queries_path}\n")
+    if args.dataset == "realistic":
+        from retrieval_lab.corpora.realistic import dump_realistic_corpus_jsonl
+
+        docs_path, queries_path = dump_realistic_corpus_jsonl(out_dir)
+        params = dict(chunkers="fixed:600,fixed:140", retrieval="dense,sparse,hybrid",
+                      rerank="none,lexical", top_k=3, candidate_n=20)
+    else:
+        from retrieval_lab.corpora.constructed import dump_basic_corpus_jsonl
+
+        docs_path, queries_path = dump_basic_corpus_jsonl(out_dir)
+        params = dict(chunkers="fixed,recursive", retrieval="dense,hybrid",
+                      rerank="none,lexical", top_k=3, candidate_n=10)
+    print(f"Wrote {args.dataset} demo corpus to {docs_path} and {queries_path}\n")
+
     demo_args = argparse.Namespace(
         corpus=str(docs_path), queries=str(queries_path),
-        embed_models="det", chunkers="fixed,recursive", retrieval="dense,hybrid",
-        rerank="none,lexical", top_k=3, candidate_n=10, budget_tokens="",
-        min_sample=1, seed=0, top=None, fail_under=None,
+        embed_models="det", budget_tokens="", min_sample=1, seed=0, top=None, fail_under=None,
         json=str(Path(out_dir) / "out.json"), html=str(Path(out_dir) / "report.html"),
+        **params,
     )
     return _cmd_run(demo_args)
 
@@ -234,7 +247,9 @@ def build_parser() -> argparse.ArgumentParser:
     pareto.add_argument("--json", required=True, help="a results JSON from `run`")
     pareto.set_defaults(func=_cmd_pareto)
 
-    demo = sub.add_parser("demo", help="run the keyless demo corpus end to end (no inputs)")
+    demo = sub.add_parser("demo", help="run a keyless demo corpus end to end (no inputs)")
+    demo.add_argument("--dataset", choices=["basic", "realistic"], default="realistic",
+                      help="basic = 4-doc sanity; realistic = configs diverge across stages")
     demo.add_argument("--out-dir", default=None, help="where to write the demo corpus + report")
     demo.set_defaults(func=_cmd_demo)
 

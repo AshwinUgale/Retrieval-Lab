@@ -190,6 +190,22 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     return _cmd_run(demo_args)
 
 
+def _cmd_make_gold(args: argparse.Namespace) -> int:
+    """Convert an offset-free authoring spec into a verified queries.jsonl."""
+    from retrieval_lab.authoring import load_authoring_spec, write_queries_jsonl
+
+    try:
+        documents = load_documents(args.corpus)
+        queries = load_authoring_spec(args.spec, documents)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
+    write_queries_jsonl(queries, args.out)
+    print(f"Wrote {len(queries)} verified queries (offsets + source_version stamped) to "
+          f"{args.out}")
+    return EXIT_OK
+
+
 def _cmd_geometry(args: argparse.Namespace) -> int:
     from retrieval_lab.geometry import geometry_report, render_geometry
 
@@ -246,6 +262,14 @@ def build_parser() -> argparse.ArgumentParser:
     pareto = sub.add_parser("pareto", help="Pareto frontier over quality x tokens")
     pareto.add_argument("--json", required=True, help="a results JSON from `run`")
     pareto.set_defaults(func=_cmd_pareto)
+
+    make_gold = sub.add_parser("make-gold",
+                               help="author gold from answer quotes (stamps offsets)")
+    make_gold.add_argument("--corpus", required=True, help="documents JSONL")
+    make_gold.add_argument("--spec", required=True,
+                           help="offset-free authoring JSONL (id, text, source_id, answer[_all])")
+    make_gold.add_argument("--out", required=True, help="verified queries.jsonl to write")
+    make_gold.set_defaults(func=_cmd_make_gold)
 
     demo = sub.add_parser("demo", help="run a keyless demo corpus end to end (no inputs)")
     demo.add_argument("--dataset", choices=["basic", "realistic"], default="realistic",

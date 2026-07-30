@@ -50,6 +50,17 @@ retrieval-lab geometry --corpus docs.jsonl                 # embedding-space ris
 - **`queries.jsonl`** — one query per line with **source-span gold** (character offsets +
   `quoted_text`, optionally a `source_version` hash). Offsets are verified at load and the
   tool **fails closed** on any drift.
+
+Don't hand-compute offsets — author gold from **answer quotes** and let the tool stamp them:
+
+```bash
+# spec.jsonl:  {"id":"Q1","text":"what is CX-429?","source_id":"D1","answer":"error code CX-429"}
+retrieval-lab make-gold --corpus docs.jsonl --spec spec.jsonl --out queries.jsonl
+```
+
+`answer` = one required span; `answer_all: [...]` = several required spans (conjunction);
+`alternatives: [...]` = several acceptable answers (disjunction). A quote that isn't found is
+rejected at authoring time.
 - Exit codes for CI: `0` ok, `1` baseline-broken or `--fail-under` gate missed, `2` input /
   gold-verification error.
 

@@ -5,6 +5,7 @@ See ``PROJECTS-TECHNICAL-SPEC.md`` Part I for the authoritative design.
 """
 
 from retrieval_lab.attribution import AttributionResult, StageOutputs, attribute
+from retrieval_lab.authoring import build_gold, build_query, load_authoring_spec, make_span
 from retrieval_lab.budget import pack_by_budget
 from retrieval_lab.chunking import (
     Chunker,
@@ -113,6 +114,10 @@ __all__ = [
     "render_html",
     "write_html",
     "geometry_report",
+    "make_span",
+    "build_gold",
+    "build_query",
+    "load_authoring_spec",
 ]
 
 __version__ = "0.0.0"

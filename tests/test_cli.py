@@ -87,9 +87,35 @@ def test_run_writes_html(demo, tmp_path):
 
 def test_demo_command_runs_end_to_end(tmp_path):
     out = tmp_path / "demo"
-    code = main(["demo", "--out-dir", str(out)])
+    code = main(["demo", "--dataset", "basic", "--out-dir", str(out)])
     assert code == EXIT_OK
     assert (out / "docs.jsonl").exists()
     assert (out / "queries.jsonl").exists()
     assert (out / "out.json").exists()
     assert (out / "report.html").exists()
+
+
+def test_make_gold_converts_authoring_spec_to_verified_queries(tmp_path):
+    docs = tmp_path / "docs.jsonl"
+    docs.write_text(json.dumps({"id": "D1", "text": "Bread bakes at 220 degrees Celsius."})
+                    + "\n", encoding="utf-8")
+    spec = tmp_path / "spec.jsonl"
+    spec.write_text(json.dumps({"id": "Q1", "text": "temp?", "source_id": "D1",
+                                "answer": "220 degrees Celsius"}) + "\n", encoding="utf-8")
+    out = tmp_path / "queries.jsonl"
+    code = main(["make-gold", "--corpus", str(docs), "--spec", str(spec), "--out", str(out)])
+    assert code == EXIT_OK
+    # The produced queries then run cleanly through `run` (fail-closed gold verification).
+    assert main(["run", "--corpus", str(docs), "--queries", str(out),
+                 "--min-sample", "1"]) == EXIT_OK
+
+
+def test_make_gold_bad_quote_fails_closed(tmp_path):
+    docs = tmp_path / "docs.jsonl"
+    docs.write_text(json.dumps({"id": "D1", "text": "hello world"}) + "\n", encoding="utf-8")
+    spec = tmp_path / "spec.jsonl"
+    spec.write_text(json.dumps({"id": "Q1", "text": "q", "source_id": "D1",
+                                "answer": "not present"}) + "\n", encoding="utf-8")
+    out = tmp_path / "queries.jsonl"
+    code = main(["make-gold", "--corpus", str(docs), "--spec", str(spec), "--out", str(out)])
+    assert code == EXIT_INPUT_ERROR  # the typo is caught at authoring time

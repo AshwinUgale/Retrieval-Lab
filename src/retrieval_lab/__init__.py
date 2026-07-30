@@ -1,22 +1,23 @@
-"""Retrieval Lab — corpus-specific retrieval benchmark and deterministic stage-level
+"""Retrieval Lab — a corpus-specific retrieval benchmark and deterministic, stage-level
 failure-attribution engine for RAG pipelines.
+
+The names re-exported here are the **supported public API** and follow semantic versioning.
+Everything else remains importable from its submodule (e.g. ``retrieval_lab.attribution``,
+``retrieval_lab.metrics``) but is considered internal and may change between minor versions.
+
+Real embedding models (e5/bge) live behind the ``[real-embed]`` extra and are imported lazily
+from ``retrieval_lab.embedding`` (``from retrieval_lab.embedding import e5_embedder``) so the
+top-level import never requires sentence-transformers.
 
 See ``PROJECTS-TECHNICAL-SPEC.md`` Part I for the authoritative design.
 """
 
-from retrieval_lab.attribution import AttributionResult, StageOutputs, attribute
-from retrieval_lab.authoring import build_gold, build_query, load_authoring_spec, make_span
-from retrieval_lab.budget import pack_by_budget
-from retrieval_lab.chunking import (
-    Chunker,
-    FixedSizeChunker,
-    ParentChildChunker,
-    RecursiveChunker,
-    SemanticChunker,
-)
-from retrieval_lab.datasets import DatasetImport, load_beir, load_squad
-from retrieval_lab.embedding import DeterministicEmbedder, Embedder, EmbeddingCache
-from retrieval_lab.geometry import geometry_report
+# ruff: noqa: I001 — imports are grouped by role (matching __all__), not alphabetically.
+
+# --- Data model ---------------------------------------------------------------------
+from retrieval_lab.models import Chunk, Config, Document, QueryResult
+
+# --- Ground truth: source-span gold + the coverage predicate ------------------------
 from retrieval_lab.gold import (
     EvidenceSet,
     GoldAnswer,
@@ -25,20 +26,41 @@ from retrieval_lab.gold import (
     Query,
     coverage,
     gold_completion_rank,
+    load_documents,
+    load_queries,
     satisfies_gold,
-    single_chunk_coverage_by_span,
 )
-from retrieval_lab.metrics import (
-    ConfigCost,
-    ConfigMetrics,
-    aggregate_config,
-    compare_configs,
-    latency_stats,
-    validity_report,
-    wilson_interval,
+
+# --- Author gold from answer quotes (no hand-computed offsets) -----------------------
+from retrieval_lab.authoring import build_gold, build_query, load_authoring_spec, make_span
+
+# --- Import real labeled datasets ---------------------------------------------------
+from retrieval_lab.datasets import DatasetImport, load_beir, load_squad
+
+# --- Components: chunkers, embedders, retrievers, rerankers -------------------------
+from retrieval_lab.chunking import (
+    Chunker,
+    FixedSizeChunker,
+    ParentChildChunker,
+    RecursiveChunker,
+    SemanticChunker,
 )
-from retrieval_lab.models import Chunk, Config, Document, QueryResult, compute_chunk_id
+from retrieval_lab.embedding import DeterministicEmbedder, Embedder, EmbeddingCache
+from retrieval_lab.retrieval import (
+    ANNDenseRetriever,
+    BM25Retriever,
+    CrossEncoderReranker,
+    DenseRetriever,
+    LexicalReranker,
+    Reranker,
+)
+
+# --- The sweep workflow -------------------------------------------------------------
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
+from retrieval_lab.sweep import SweepResult, SweepSpec, run_sweep
+from retrieval_lab.metrics import ConfigMetrics
+
+# --- Reporting ----------------------------------------------------------------------
 from retrieval_lab.report import (
     pareto_frontier,
     read_json,
@@ -49,83 +71,37 @@ from retrieval_lab.report import (
     write_html,
     write_json,
 )
-from retrieval_lab.retrieval import (
-    ANNDenseRetriever,
-    BM25Retriever,
-    CrossEncoderReranker,
-    DenseRetriever,
-    LexicalReranker,
-    Reranker,
-    ann_vs_exact_recall,
-    reciprocal_rank_fusion,
-)
-from retrieval_lab.scoring import score_query
-from retrieval_lab.sweep import SweepResult, SweepSpec, run_sweep
+
+# --- Embedding-space diagnostics ----------------------------------------------------
+from retrieval_lab.geometry import geometry_report
 
 __all__ = [
-    "Document",
-    "Chunk",
-    "Config",
-    "QueryResult",
-    "compute_chunk_id",
-    "GoldSpan",
-    "EvidenceSet",
-    "GoldAnswer",
-    "Query",
-    "OffsetVerificationError",
-    "coverage",
-    "single_chunk_coverage_by_span",
-    "satisfies_gold",
-    "gold_completion_rank",
-    "Chunker",
-    "FixedSizeChunker",
-    "RecursiveChunker",
-    "SemanticChunker",
+    # Data model
+    "Document", "Chunk", "Config", "QueryResult",
+    # Ground truth
+    "GoldSpan", "EvidenceSet", "GoldAnswer", "Query", "OffsetVerificationError",
+    "coverage", "satisfies_gold", "gold_completion_rank",
+    "load_documents", "load_queries",
+    # Authoring
+    "make_span", "build_gold", "build_query", "load_authoring_spec",
+    # Datasets
+    "DatasetImport", "load_squad", "load_beir",
+    # Chunkers
+    "Chunker", "FixedSizeChunker", "RecursiveChunker", "SemanticChunker",
     "ParentChildChunker",
-    "Embedder",
-    "EmbeddingCache",
-    "DeterministicEmbedder",
-    "DenseRetriever",
-    "BM25Retriever",
-    "reciprocal_rank_fusion",
-    "Reranker",
-    "LexicalReranker",
-    "CrossEncoderReranker",
-    "ANNDenseRetriever",
-    "ann_vs_exact_recall",
-    "pack_by_budget",
-    "score_query",
-    "StageOutputs",
-    "AttributionResult",
-    "attribute",
-    "RetrievalPipeline",
-    "evaluate_query",
-    "aggregate_config",
-    "compare_configs",
-    "validity_report",
-    "wilson_interval",
+    # Embedders
+    "Embedder", "DeterministicEmbedder", "EmbeddingCache",
+    # Retrievers / rerankers
+    "DenseRetriever", "BM25Retriever", "ANNDenseRetriever",
+    "Reranker", "LexicalReranker", "CrossEncoderReranker",
+    # Workflow
+    "SweepSpec", "SweepResult", "run_sweep", "RetrievalPipeline", "evaluate_query",
     "ConfigMetrics",
-    "ConfigCost",
-    "latency_stats",
-    "SweepSpec",
-    "SweepResult",
-    "run_sweep",
-    "render_report",
-    "render_pareto",
-    "render_explain",
-    "pareto_frontier",
-    "write_json",
-    "read_json",
-    "render_html",
-    "write_html",
+    # Reporting
+    "render_report", "render_pareto", "render_explain", "render_html",
+    "write_json", "write_html", "read_json", "pareto_frontier",
+    # Diagnostics
     "geometry_report",
-    "make_span",
-    "build_gold",
-    "build_query",
-    "load_authoring_spec",
-    "DatasetImport",
-    "load_squad",
-    "load_beir",
 ]
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"

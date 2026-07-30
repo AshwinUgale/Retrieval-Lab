@@ -23,31 +23,51 @@ and the attribution engine, so they can never disagree.
 
 ## Quickstart
 
-```bash
-pip install -e ".[dev]"
-retrieval-lab demo            # realistic keyless demo: configs diverge, writes report.html
-retrieval-lab demo --dataset basic     # 4-doc sanity corpus (everything hits)
-```
-
-`demo` needs no data and no downloads. The default `realistic` dataset is a fictional
-product's documentation with hard queries, so the report actually shows the differentiator —
-hit@k ranging ~0.44–0.94 across configs, with failures attributed to `candidate_generation`,
-`fusion`, `reranker_demotion`, and `final_cutoff`, plus fragmentation under small chunks. On
-your own corpus:
+Install with a real embedding model (e5/bge run locally — no API key, no data leaves your
+machine) and point it at your corpus:
 
 ```bash
+pip install "retrieval-lab[real-embed]"
+
 retrieval-lab run --corpus docs.jsonl --queries queries.jsonl \
-    --embed-models det --chunkers fixed,recursive --retrieval dense,hybrid \
+    --embed-models e5 --chunkers fixed,recursive --retrieval dense,hybrid \
     --rerank none,lexical --top-k 5 --candidate-n 50 \
     --json out.json --html report.html --fail-under 0.8    # --fail-under = CI quality gate
 
 retrieval-lab explain  --json out.json --query-id Q17      # per-stage failure attribution
 retrieval-lab pareto   --json out.json                     # quality × retrieved-tokens frontier
-retrieval-lab geometry --corpus docs.jsonl                 # embedding-space risk indicators
+retrieval-lab geometry --corpus docs.jsonl --embed-model e5  # embedding-space risk indicators
 ```
 
-Add `--measure-latency` to `run` for p50/p95 retrieval latency and index size — reported but
-flagged **environment-specific** (only quality and the token budget transfer across machines).
+Swap `--embed-models e5,bge` to put two real models head-to-head on *your* data. Add
+`--measure-latency` for p50/p95 latency and index size — reported but flagged
+**environment-specific** (only quality and the token budget transfer across machines).
+
+### Just want to see it work? (no download)
+
+```bash
+pip install retrieval-lab
+retrieval-lab demo            # realistic corpus, keyless, writes report.html — instant
+```
+
+The `demo` runs fully offline with a **keyless deterministic embedder** — a hashing-trick
+stand-in that needs no model download, so the whole thing (and the test suite) is reproducible
+in CI. It's great for trying the tool and it's what the tests run on, **but it is not a
+semantic embedder** — its "dense" retrieval is really fuzzy lexical matching. For real
+retrieval quality, use `--embed-models e5` (or `bge`) as above. The demo still shows the
+differentiator: hit@k ~0.44–0.94 across configs, with failures attributed to
+`candidate_generation`, `fusion`, `reranker_demotion`, and `final_cutoff`.
+
+### Which embedder?
+
+| name | what it is | key? |
+|------|-----------|------|
+| `e5`, `bge` | real local models (sentence-transformers), `[real-embed]` extra | no |
+| `det` | keyless deterministic stand-in (default; CI/offline only) | no |
+| OpenAI/Cohere | API models — a small adapter reading a key from the env (not built in yet) | yes |
+
+The tool is embedder-agnostic, so its real job is to tell you *which of these actually wins on
+your corpus* — often the free local model is enough.
 
 - **`docs.jsonl`** — one `{"id", "text"}` per line.
 - **`queries.jsonl`** — one query per line with **source-span gold** (character offsets +
@@ -123,6 +143,10 @@ opt-in tests (`RLAB_REAL_EMBED=1`; install `[ann]`).
 
 ## Status
 
-Built in phases; see `aie/roadmap/retrieval-lab/progress/STATUS.md`. Phases 0–8 complete:
-foundation → dense → hybrid+attribution → rerank/budget → metrics → sweep+real models →
-report/CLI → semantic/parent-child/geometry/ANN → productization.
+`0.1.0` — beta. Feature-complete against the design spec: span-gold foundation, dense / BM25 /
+hybrid retrieval, RRF fusion, cross-encoder reranking, the full six-stage DAG failure
+attribution, Wilson/bootstrap confidence intervals with fail-closed validity gates, a config
+sweep with real (e5/bge) or keyless embedders, token-budget + Pareto fair comparison,
+geometry lenses, an ANN/HNSW option, JSON/HTML reporting, a gold-authoring helper, and
+SQuAD/BEIR importers. The public API (the names exported from `retrieval_lab`) follows
+semantic versioning; submodule internals may change between minor versions.

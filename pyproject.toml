@@ -4,17 +4,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "retrieval-lab"
-version = "0.0.0"
+version = "0.1.0"
 description = "Corpus-specific retrieval benchmark and deterministic stage-level failure-attribution engine for RAG pipelines."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "Retrieval Lab" }]
+license = { file = "LICENSE" }
+authors = [{ name = "Ashwin Ugale" }]
 keywords = ["retrieval", "rag", "benchmark", "evaluation", "ir", "attribution"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 
@@ -40,7 +45,9 @@ dev = [
 retrieval-lab = "retrieval_lab.cli:main"
 
 [project.urls]
-Homepage = "https://example.invalid/retrieval-lab"
+Homepage = "https://github.com/AshwinUgale/Retrieval-Lab"
+Repository = "https://github.com/AshwinUgale/Retrieval-Lab"
+Issues = "https://github.com/AshwinUgale/Retrieval-Lab/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/retrieval_lab"]

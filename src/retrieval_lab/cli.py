@@ -83,11 +83,13 @@ def _make_reranker(name: str):
         return None, None
     if name == "lexical":
         return "lexical", LexicalReranker()
-    if name == "ce":
+    if name == "ce" or name.startswith("ce:"):
         from retrieval_lab.retrieval import CrossEncoderReranker
 
-        return "ce", CrossEncoderReranker()
-    raise ValueError(f"unknown reranker {name!r} (use none, lexical, or ce)")
+        # `ce` = default cross-encoder; `ce:<model>` = a specific HuggingFace model.
+        model = name.split(":", 1)[1] if ":" in name else "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        return name, CrossEncoderReranker(model)
+    raise ValueError(f"unknown reranker {name!r} (use none, lexical, ce, or ce:<model>)")
 
 
 def _build_spec(args: argparse.Namespace) -> SweepSpec:

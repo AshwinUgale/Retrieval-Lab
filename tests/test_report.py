@@ -6,6 +6,7 @@ from retrieval_lab.embedding import DeterministicEmbedder
 from retrieval_lab.report import (
     pareto_frontier,
     render_explain,
+    render_html,
     render_pareto,
     render_report,
     sweep_from_dict,
@@ -92,3 +93,36 @@ def test_html_report_is_self_contained(tmp_path):
     p = tmp_path / "nested" / "report.html"
     write_html(sweep, p)  # creates parent dirs
     assert p.exists() and p.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_html_report_is_readable_and_well_formed():
+    """Regression: the report must not fall back to pipe-string ids, and the Pareto SVG
+    attributes must be quoted (an unquoted ``class=x/>`` renders black/invisible)."""
+    import re
+
+    sweep = _sweep()
+    html = render_html(sweep)
+    # Readability: a glossary + colour-coded stage legend, and config chips (not raw ids).
+    assert "How to read this" in html
+    assert "Final cutoff" in html  # a stage explained in plain English
+    assert "|dense|" not in html  # the pipe-string config id is never shown raw
+    # The Pareto SVG renders marks, and no attribute has the unquoted-class-slash bug.
+    assert "<svg" in html and "<circle" in html
+    assert re.search(r'class=[a-z]+/', html) is None
+    assert 'class="front"' in html and 'class="dom"' in html
+
+
+def test_html_report_renders_when_no_cost_and_single_config():
+    # Degenerate inputs must not crash the renderer.
+    docs, queries = build_basic_corpus()
+    from retrieval_lab.chunking import FixedSizeChunker
+    from retrieval_lab.embedding import DeterministicEmbedder
+
+    spec = SweepSpec(
+        embedders={"det": DeterministicEmbedder(dim=512)},
+        chunkers={"fixed": FixedSizeChunker(chunk_size=400)},
+        retrieval_modes=("dense",),
+        top_k=3, candidate_n=10,
+    )
+    html = render_html(run_sweep(docs, queries, spec, min_sample=1))
+    assert html.startswith("<!doctype html>") and "<svg" in html

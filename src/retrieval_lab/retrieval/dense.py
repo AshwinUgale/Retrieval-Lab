@@ -46,3 +46,8 @@ class DenseRetriever:
     def retrieve(self, query: str, k: int) -> list[Chunk]:
         """Top-``k`` chunks by cosine, highest first."""
         return [c for c, _ in self.retrieve_scored(query, k)]
+
+    @property
+    def index_nbytes(self) -> int:
+        """Rough index size: the stored vector matrix in bytes (0 before indexing)."""
+        return int(self._matrix.nbytes) if self._matrix is not None else 0

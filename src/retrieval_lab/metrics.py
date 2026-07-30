@@ -78,6 +78,36 @@ def bootstrap_mean_ci(
 
 
 @dataclass
+class ConfigCost:
+    """Measured (environment-specific) cost of a config (spec §I.10).
+
+    Latency and index size are **not** transferable across machines — only quality and the
+    retrieved-token budget are. These are reported for the environment they were measured in,
+    never as a portable quality signal.
+    """
+
+    n: int
+    mean_ms: float
+    p50_ms: float
+    p95_ms: float
+    index_bytes: int  # rough: dense vector matrix size (0 for sparse-only)
+
+
+def latency_stats(samples_ms: Sequence[float], index_bytes: int = 0) -> ConfigCost:
+    """Summarize per-query retrieval latencies into p50/p95/mean."""
+    arr = np.asarray(samples_ms, dtype=float)
+    if arr.size == 0:
+        return ConfigCost(0, 0.0, 0.0, 0.0, index_bytes)
+    return ConfigCost(
+        n=int(arr.size),
+        mean_ms=float(arr.mean()),
+        p50_ms=float(np.percentile(arr, 50)),
+        p95_ms=float(np.percentile(arr, 95)),
+        index_bytes=int(index_bytes),
+    )
+
+
+@dataclass
 class Comparison:
     """Paired comparison of a metric between two configs on the same queries."""
 

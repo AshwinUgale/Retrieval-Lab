@@ -46,6 +46,9 @@ retrieval-lab pareto   --json out.json                     # quality × retrieve
 retrieval-lab geometry --corpus docs.jsonl                 # embedding-space risk indicators
 ```
 
+Add `--measure-latency` to `run` for p50/p95 retrieval latency and index size — reported but
+flagged **environment-specific** (only quality and the token budget transfer across machines).
+
 - **`docs.jsonl`** — one `{"id", "text"}` per line.
 - **`queries.jsonl`** — one query per line with **source-span gold** (character offsets +
   `quoted_text`, optionally a `source_version` hash). Offsets are verified at load and the

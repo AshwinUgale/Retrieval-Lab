@@ -126,7 +126,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return EXIT_INPUT_ERROR
 
     spec = _build_spec(args)
-    sweep = run_sweep(documents, queries, spec, min_sample=args.min_sample, seed=args.seed)
+    sweep = run_sweep(documents, queries, spec, min_sample=args.min_sample, seed=args.seed,
+                      measure_latency=getattr(args, "measure_latency", False))
     print(render_report(sweep, top=args.top))
     if args.json:
         write_json(sweep, args.json)
@@ -246,6 +247,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--candidate-n", type=int, default=50)
     run.add_argument("--budget-tokens", default="", help="csv of token budgets, e.g. 2000,4000")
     run.add_argument("--min-sample", type=int, default=20, help="min queries for a verdict")
+    run.add_argument("--measure-latency", action="store_true",
+                     help="time retrieval and report p50/p95 + index size (environment-specific)")
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--top", type=int, default=None, help="show only the top N configs")
     run.add_argument("--fail-under", type=float, default=None,

@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from retrieval_lab.metrics import ConfigMetrics, ValidityReport
+from retrieval_lab.metrics import ConfigCost, ConfigMetrics, ValidityReport
 from retrieval_lab.models import QueryResult
 from retrieval_lab.sweep import SweepResult
 
@@ -40,6 +40,7 @@ def sweep_to_dict(sweep: SweepResult) -> dict:
         },
         "metrics": [asdict(m) for m in sweep.metrics],
         "validity": asdict(sweep.validity),
+        "cost": None if sweep.cost is None else {k: asdict(v) for k, v in sweep.cost.items()},
     }
 
 
@@ -59,12 +60,15 @@ def sweep_from_dict(d: dict) -> SweepResult:
         m["mrr_ci"] = _tuple_or_none(m.get("mrr_ci"))
         metrics.append(ConfigMetrics(**m))
     validity = ValidityReport(**d["validity"])
+    cost_d = d.get("cost")
+    cost = None if cost_d is None else {k: ConfigCost(**v) for k, v in cost_d.items()}
     return SweepResult(
         n_docs=d["n_docs"],
         n_queries=d["n_queries"],
         results_by_config=results_by_config,
         metrics=metrics,
         validity=validity,
+        cost=cost,
     )
 
 
@@ -159,6 +163,18 @@ def render_report(sweep: SweepResult, top: int | None = None, by: str = "hit_rat
         hit = f"{m.hit_rate:.2f}{_fmt_ci(m.hit_rate_ci)}"
         lines.append(f"{m.config_id:<58}{m.n:>4}   {hit:>22}{m.mrr:>7.2f}   {stages}{frag}")
     lines.append("")
+    if sweep.cost:
+        lines.append("Measured cost (ENVIRONMENT-SPECIFIC — not transferable across machines; "
+                     "only quality + token budgets transfer):")
+        lines.append(f"  {'config':<56}{'p50 ms':>9}{'p95 ms':>9}{'index KB':>11}")
+        lines.append("  " + "-" * 85)
+        for m in ranked:
+            c = sweep.cost.get(m.config_id)
+            if c is None:
+                continue
+            lines.append(f"  {m.config_id:<56}{c.p50_ms:>9.2f}{c.p95_ms:>9.2f}"
+                         f"{c.index_bytes / 1024:>11.1f}")
+        lines.append("")
     if sweep.validity.notes:
         lines.append("Validity:")
         lines.extend(f"  - {n}" for n in sweep.validity.notes)

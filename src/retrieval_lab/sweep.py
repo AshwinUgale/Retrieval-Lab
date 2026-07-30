@@ -12,6 +12,7 @@ built once per chunker.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -21,14 +22,16 @@ from retrieval_lab.gold import DEFAULT_MIN_GOLD_COVERAGE, Query
 from retrieval_lab.metrics import (
     DEFAULT_MIN_SAMPLE,
     Comparison,
+    ConfigCost,
     ConfigMetrics,
     ValidityReport,
     aggregate_config,
     compare_configs,
+    latency_stats,
     validity_report,
 )
 from retrieval_lab.models import Config, Document, QueryResult
-from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
+from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query, score_and_attribute
 from retrieval_lab.retrieval.bm25 import BM25Retriever
 from retrieval_lab.retrieval.dense import DenseRetriever
 from retrieval_lab.retrieval.rerank import Reranker
@@ -66,6 +69,7 @@ class SweepResult:
     results_by_config: dict[str, list[QueryResult]]
     metrics: list[ConfigMetrics]
     validity: ValidityReport
+    cost: dict[str, ConfigCost] | None = None  # populated only when measure_latency=True
 
     def metrics_by_config(self) -> dict[str, ConfigMetrics]:
         return {m.config_id: m for m in self.metrics}
@@ -96,11 +100,18 @@ def run_sweep(
     min_sample: int = DEFAULT_MIN_SAMPLE,
     min_gold_coverage: float = DEFAULT_MIN_GOLD_COVERAGE,
     seed: int = 0,
+    measure_latency: bool = False,
 ) -> SweepResult:
-    """Execute the grid and return per-config results, metrics, and validity gates."""
+    """Execute the grid and return per-config results, metrics, and validity gates.
+
+    With ``measure_latency=True`` each query's retrieval is wall-clock timed and per-config
+    p50/p95 latency + index size are captured (spec §I.10). These are **environment-specific**
+    and disclosed as such — off by default so the deterministic test path is unaffected.
+    """
     docs = list(documents.values())
     results_by_config: dict[str, list[QueryResult]] = {}
     metrics: list[ConfigMetrics] = []
+    cost: dict[str, ConfigCost] | None = {} if measure_latency else None
 
     for ch_name, chunker in spec.chunkers.items():
         chunks = chunker.chunk_corpus(docs)
@@ -133,9 +144,21 @@ def run_sweep(
                             reranker=reranker if rr_name else None,
                             return_expander=return_expander,
                         )
-                        results = [
-                            evaluate_query(q, pipeline, min_gold_coverage) for q in queries
-                        ]
+                        if cost is None:
+                            results = [
+                                evaluate_query(q, pipeline, min_gold_coverage) for q in queries
+                            ]
+                        else:
+                            results, samples = [], []
+                            for q in queries:
+                                t0 = time.perf_counter()
+                                outs = pipeline.run(q.text)
+                                samples.append((time.perf_counter() - t0) * 1000.0)
+                                results.append(
+                                    score_and_attribute(q, outs, config, min_gold_coverage)
+                                )
+                            index_bytes = dense.index_nbytes if mode in _DENSE_MODES else 0
+                            cost[config.id] = latency_stats(samples, index_bytes)
                         results_by_config[config.id] = results
                         metrics.append(
                             aggregate_config(results, config.id, min_sample, seed)
@@ -147,4 +170,5 @@ def run_sweep(
         results_by_config=results_by_config,
         metrics=metrics,
         validity=validity_report(metrics),
+        cost=cost,
     )

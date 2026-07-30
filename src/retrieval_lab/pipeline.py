@@ -128,6 +128,28 @@ class RetrievalPipeline:
         )
 
 
+def score_and_attribute(
+    query: Query,
+    outs: StageOutputs,
+    config: Config,
+    min_gold_coverage: float = DEFAULT_MIN_GOLD_COVERAGE,
+) -> QueryResult:
+    """Score + attribute already-computed stage outputs (retrieval already done).
+
+    Split out from ``evaluate_query`` so a caller that times retrieval can reuse the run
+    instead of executing it twice.
+    """
+    # The delivered context is the budget-packed subset when a budget applies, else top_k.
+    delivered = outs.budget_packed if outs.budget_packed is not None else outs.final
+    result = score_query(
+        query, outs.pre_final, config.id, config.top_k, min_gold_coverage, final=delivered
+    )
+    attr = attribute(outs, query.gold, config, min_gold_coverage)
+    result.stage_attribution = attr.stage
+    result.branch_diag = attr.branch_diag
+    return result
+
+
 def evaluate_query(
     query: Query,
     pipeline: RetrievalPipeline,
@@ -135,17 +157,4 @@ def evaluate_query(
 ) -> QueryResult:
     """Run, score, and attribute one query. Returns a fully populated ``QueryResult``."""
     outs = pipeline.run(query.text)
-    # The delivered context is the budget-packed subset when a budget applies, else top_k.
-    delivered = outs.budget_packed if outs.budget_packed is not None else outs.final
-    result = score_query(
-        query,
-        outs.pre_final,
-        pipeline.config.id,
-        pipeline.config.top_k,
-        min_gold_coverage,
-        final=delivered,
-    )
-    attr = attribute(outs, query.gold, pipeline.config, min_gold_coverage)
-    result.stage_attribution = attr.stage
-    result.branch_diag = attr.branch_diag
-    return result
+    return score_and_attribute(query, outs, pipeline.config, min_gold_coverage)

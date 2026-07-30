@@ -28,9 +28,11 @@ from retrieval_lab.gold import (
     single_chunk_coverage_by_span,
 )
 from retrieval_lab.metrics import (
+    ConfigCost,
     ConfigMetrics,
     aggregate_config,
     compare_configs,
+    latency_stats,
     validity_report,
     wilson_interval,
 )
@@ -102,6 +104,8 @@ __all__ = [
     "validity_report",
     "wilson_interval",
     "ConfigMetrics",
+    "ConfigCost",
+    "latency_stats",
     "SweepSpec",
     "SweepResult",
     "run_sweep",

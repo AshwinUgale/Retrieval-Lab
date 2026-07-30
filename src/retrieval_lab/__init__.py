@@ -14,6 +14,7 @@ from retrieval_lab.chunking import (
     RecursiveChunker,
     SemanticChunker,
 )
+from retrieval_lab.datasets import DatasetImport, load_beir, load_squad
 from retrieval_lab.embedding import DeterministicEmbedder, Embedder, EmbeddingCache
 from retrieval_lab.geometry import geometry_report
 from retrieval_lab.gold import (
@@ -122,6 +123,9 @@ __all__ = [
     "build_gold",
     "build_query",
     "load_authoring_spec",
+    "DatasetImport",
+    "load_squad",
+    "load_beir",
 ]
 
 __version__ = "0.0.0"

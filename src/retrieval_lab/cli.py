@@ -207,6 +207,36 @@ def _cmd_make_gold(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_import_squad(args: argparse.Namespace) -> int:
+    from retrieval_lab.datasets import load_squad
+
+    try:
+        imp = load_squad(args.input, max_queries=args.max_queries)
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"error: could not import SQuAD: {exc}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
+    docs_path, queries_path = imp.write_jsonl(args.out_dir)
+    print(f"Imported SQuAD: {imp.summary()}")
+    print(f"Wrote {docs_path} and {queries_path}")
+    return EXIT_OK
+
+
+def _cmd_import_beir(args: argparse.Namespace) -> int:
+    from retrieval_lab.datasets import load_beir
+
+    try:
+        imp = load_beir(args.corpus, args.queries, args.qrels, max_queries=args.max_queries)
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"error: could not import BEIR: {exc}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
+    docs_path, queries_path = imp.write_jsonl(args.out_dir)
+    print(f"Imported BEIR: {imp.summary()}")
+    print(f"Wrote {docs_path} and {queries_path}")
+    print("Note: gold is passage-level; hit is coverage-based. Prefer a large chunk size for "
+          "the closest correspondence to BEIR qrels.")
+    return EXIT_OK
+
+
 def _cmd_geometry(args: argparse.Namespace) -> int:
     from retrieval_lab.geometry import geometry_report, render_geometry
 
@@ -265,6 +295,22 @@ def build_parser() -> argparse.ArgumentParser:
     pareto = sub.add_parser("pareto", help="Pareto frontier over quality x tokens")
     pareto.add_argument("--json", required=True, help="a results JSON from `run`")
     pareto.set_defaults(func=_cmd_pareto)
+
+    imp_squad = sub.add_parser("import-squad",
+                               help="convert a SQuAD JSON file into docs.jsonl + queries.jsonl")
+    imp_squad.add_argument("--input", required=True, help="SQuAD v1.1 / v2.0 JSON file")
+    imp_squad.add_argument("--out-dir", required=True)
+    imp_squad.add_argument("--max-queries", type=int, default=None)
+    imp_squad.set_defaults(func=_cmd_import_squad)
+
+    imp_beir = sub.add_parser("import-beir",
+                              help="convert a BEIR dataset (corpus/queries/qrels) into our format")
+    imp_beir.add_argument("--corpus", required=True, help="BEIR corpus.jsonl")
+    imp_beir.add_argument("--queries", required=True, help="BEIR queries.jsonl")
+    imp_beir.add_argument("--qrels", required=True, help="BEIR qrels TSV")
+    imp_beir.add_argument("--out-dir", required=True)
+    imp_beir.add_argument("--max-queries", type=int, default=None)
+    imp_beir.set_defaults(func=_cmd_import_beir)
 
     make_gold = sub.add_parser("make-gold",
                                help="author gold from answer quotes (stamps offsets)")

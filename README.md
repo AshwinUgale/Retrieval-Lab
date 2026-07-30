@@ -64,6 +64,28 @@ retrieval-lab make-gold --corpus docs.jsonl --spec spec.jsonl --out queries.json
 `answer` = one required span; `answer_all: [...]` = several required spans (conjunction);
 `alternatives: [...]` = several acceptable answers (disjunction). A quote that isn't found is
 rejected at authoring time.
+
+### Import real benchmarks
+
+SQuAD's `answer_start` offsets are source-span gold already, so it imports almost 1:1 (its
+multiple human answers become alternatives; `is_impossible` questions are skipped):
+
+```bash
+retrieval-lab import-squad --input dev-v2.0.json --out-dir ./squad   # downloaded by you
+retrieval-lab run --corpus ./squad/docs.jsonl --queries ./squad/queries.jsonl
+```
+
+BEIR (`corpus.jsonl` + `queries.jsonl` + `qrels.tsv`) also imports — relevance is
+passage-level, so gold covers the whole passage (a coarser, stricter notion than BEIR's
+qrels; use a large chunk size for the closest correspondence):
+
+```bash
+retrieval-lab import-beir --corpus corpus.jsonl --queries queries.jsonl --qrels qrels.tsv \
+    --out-dir ./beir
+```
+
+Every imported answer is verified against the source as it's converted; anything that doesn't
+match is skipped, never trusted.
 - Exit codes for CI: `0` ok, `1` baseline-broken or `--fail-under` gate missed, `2` input /
   gold-verification error.
 

@@ -343,6 +343,19 @@ def load_documents(path: str | Path) -> dict[str, Document]:
     return documents
 
 
+def write_documents_jsonl(documents: Iterable[Document], path: str | Path) -> Path:
+    """Write documents to a ``docs.jsonl`` (``{"id","text","meta"?}`` per line)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("w", encoding="utf-8") as fh:
+        for doc in documents:
+            record = {"id": doc.id, "text": doc.text}
+            if doc.meta:
+                record["meta"] = doc.meta
+            fh.write(json.dumps(record) + "\n")
+    return p
+
+
 def load_queries(
     path: str | Path,
     documents: Mapping[str, Document],

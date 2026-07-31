@@ -37,3 +37,34 @@ def test_config_id_is_deterministic_and_distinct():
     assert "rerank=ce" in c1.id
     # rerank=None renders explicitly, not as an empty string.
     assert "rerank=none" in Config("e5", "fixed", "dense").id
+    assert "index=exact" in c1.id
+    hnsw = Config(
+        embed_model="e5",
+        chunker="fixed",
+        retrieval="hybrid",
+        rerank="ce",
+        top_k=5,
+        dense_index="hnsw",
+    )
+    assert c1.id != hnsw.id
+    assert "hnsw_m=16" in hnsw.id and "hnsw_ef=50" in hnsw.id
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"top_k": 0},
+        {"top_k": 5, "candidate_n": 4},
+        {"budget_tokens": -1},
+        {"dense_index": "unknown"},
+    ],
+)
+def test_config_rejects_invalid_cutoffs_and_index(kwargs):
+    with pytest.raises(ValueError):
+        Config("e5", "fixed", "dense", **kwargs)
+
+
+def test_sparse_config_has_no_dense_index():
+    config = Config("none", "fixed", "sparse")
+    assert config.dense_index == "none"
+    assert "index=none" in config.id

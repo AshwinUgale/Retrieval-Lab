@@ -11,6 +11,7 @@ Two layers:
 import pytest
 
 from retrieval_lab.attribution import (
+    STAGE_ANN_INDEX,
     STAGE_BUDGET_CUTOFF,
     STAGE_CANDIDATE_GENERATION,
     STAGE_FINAL_CUTOFF,
@@ -78,6 +79,22 @@ def test_candidate_generation_failure_with_both_branches_missing():
     res = attribute(outs, GOLD, HYBRID)
     assert res.stage == STAGE_CANDIDATE_GENERATION
     assert res.branch_diag == {"dense": False, "sparse": False}
+
+
+def test_ann_index_failure_when_exact_counterfactual_found_gold():
+    config = Config(
+        embed_model="e", chunker="c", retrieval="dense",
+        top_k=1, candidate_n=5, dense_index="hnsw",
+    )
+    outs = StageOutputs(
+        all_chunks=[GOLD_CHUNK, MISS_CHUNK],
+        candidate_union=[MISS_CHUNK],
+        exact_candidate_union=[GOLD_CHUNK],
+        pre_final=[MISS_CHUNK],
+        final=[MISS_CHUNK],
+        dense_candidates=[MISS_CHUNK],
+    )
+    assert attribute(outs, GOLD, config).stage == STAGE_ANN_INDEX
 
 
 def test_fusion_failure_hybrid_only():

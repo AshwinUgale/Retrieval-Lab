@@ -20,6 +20,7 @@ from retrieval_lab.models import Chunk
 class DenseRetriever:
     def __init__(self, embedder: Embedder) -> None:
         self.embedder = embedder
+        self.name = "exact"
         self._chunks: list[Chunk] = []
         self._matrix: np.ndarray | None = None
 

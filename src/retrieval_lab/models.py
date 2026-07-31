@@ -100,15 +100,47 @@ class Config:
     top_k: int = 5
     candidate_n: int = 50
     budget_tokens: int | None = None
+    dense_index: str = "exact"
+    hnsw_m: int = 16
+    hnsw_ef_construction: int = 200
+    hnsw_ef: int = 50
+
+    def __post_init__(self) -> None:
+        if self.retrieval not in {"dense", "sparse", "hybrid"}:
+            raise ValueError("retrieval must be dense, sparse, or hybrid")
+        if self.top_k <= 0:
+            raise ValueError("top_k must be positive")
+        if self.candidate_n < self.top_k:
+            raise ValueError("candidate_n must be greater than or equal to top_k")
+        if self.budget_tokens is not None and self.budget_tokens < 0:
+            raise ValueError("budget_tokens must be non-negative")
+        if self.dense_index not in {"exact", "hnsw", "none"}:
+            raise ValueError("dense_index must be exact, hnsw, or none")
+        if self.dense_index == "hnsw" and (
+            self.hnsw_m <= 0 or self.hnsw_ef_construction <= 0 or self.hnsw_ef <= 0
+        ):
+            raise ValueError("HNSW m, ef_construction, and ef must be positive")
+        if self.retrieval == "sparse":
+            if self.dense_index == "hnsw":
+                raise ValueError("sparse retrieval cannot use a dense index")
+            object.__setattr__(self, "dense_index", "none")
+        elif self.dense_index == "none":
+            raise ValueError("dense and hybrid retrieval need a dense index")
 
     @property
     def id(self) -> str:
         """Stable, human-readable-ish config id used to key results and caches."""
         rr = self.rerank or "none"
         budget = self.budget_tokens if self.budget_tokens is not None else "none"
+        hnsw = (
+            f"|hnsw_m={self.hnsw_m}|hnsw_ef={self.hnsw_ef}"
+            f"|hnsw_efc={self.hnsw_ef_construction}"
+            if self.dense_index == "hnsw" else ""
+        )
         return (
             f"{self.embed_model}|{self.chunker}|{self.retrieval}|rerank={rr}"
-            f"|k={self.top_k}|n={self.candidate_n}|budget={budget}"
+            f"|k={self.top_k}|n={self.candidate_n}|budget={budget}|index={self.dense_index}"
+            f"{hnsw}"
         )
 
 

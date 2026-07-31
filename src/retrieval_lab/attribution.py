@@ -15,13 +15,14 @@ Stages (spec §I.7), checked earliest-first:
 
 1. ``representation``        — the chunker's full chunk set can't satisfy gold (text loss).
                               (Tiling chunkers never trip this; a lossy chunker does.)
-2. ``candidate_generation``  — chunks satisfy, but the raw candidate union (dense ∪ sparse)
+2. ``ann_index`` (HNSW)      — exact retrieval satisfies gold, but ANN candidates do not.
+3. ``candidate_generation``  — chunks satisfy, but the raw candidate union (dense ∪ sparse)
                               does not. Branch diagnostics say which branch missed.
-3. ``fusion``  (hybrid)      — the candidate union satisfies, but the fused shortlist doesn't.
-4. ``reranker_demotion`` (rerank) — the reranker's full candidate_n input satisfies, but the
+4. ``fusion``  (hybrid)      — the candidate union satisfies, but the fused shortlist doesn't.
+5. ``reranker_demotion`` (rerank) — the reranker's full candidate_n input satisfies, but the
                               reranked top_k does not (the reranker pushed gold past the cutoff).
-5. ``final_cutoff``          — (no reranker) the pre-final ranking satisfies, but top_k doesn't.
-6. ``budget_cutoff`` (budget) — the final top_k satisfies, but the budget-packed subset does
+6. ``final_cutoff``          — (no reranker) the pre-final ranking satisfies, but top_k doesn't.
+7. ``budget_cutoff`` (budget) — the final top_k satisfies, but the budget-packed subset does
                               not (lost only to the packing policy, not to retrieval).
 
 The DAG is conditional on the config: the reranker stage exists only when a reranker is
@@ -38,6 +39,7 @@ from retrieval_lab.gold import DEFAULT_MIN_GOLD_COVERAGE, GoldAnswer, satisfies_
 from retrieval_lab.models import Chunk, Config
 
 STAGE_REPRESENTATION = "representation"
+STAGE_ANN_INDEX = "ann_index"
 STAGE_CANDIDATE_GENERATION = "candidate_generation"
 STAGE_FUSION = "fusion"
 STAGE_RERANKER_DEMOTION = "reranker_demotion"
@@ -59,6 +61,7 @@ class StageOutputs:
     final: Sequence[Chunk]
     dense_candidates: Sequence[Chunk] | None = None
     sparse_candidates: Sequence[Chunk] | None = None
+    exact_candidate_union: Sequence[Chunk] | None = None
     fused: Sequence[Chunk] | None = None
     reranker_input: Sequence[Chunk] | None = None  # candidate_n shortlist fed to the reranker
     reranked: Sequence[Chunk] | None = None        # reranker output (full, reordered)
@@ -107,15 +110,23 @@ def attribute(
     if not sg(outs.all_chunks):
         return AttributionResult(STAGE_REPRESENTATION, branch)
 
-    # 2. Candidate generation — retrieval's raw union dropped it (which branch? see diag).
+    # 2. ANN index — exact retrieval would have preserved gold, but approximation lost it.
+    if (
+        outs.exact_candidate_union is not None
+        and sg(outs.exact_candidate_union)
+        and not sg(outs.candidate_union)
+    ):
+        return AttributionResult(STAGE_ANN_INDEX, branch)
+
+    # 3. Candidate generation — even exact retrieval's raw union dropped it.
     if not sg(outs.candidate_union):
         return AttributionResult(STAGE_CANDIDATE_GENERATION, branch)
 
-    # 3. Fusion (hybrid only) — the union had it but the fused shortlist lost it.
+    # 4. Fusion (hybrid only) — the union had it but the fused shortlist lost it.
     if config.retrieval == "hybrid" and outs.fused is not None and not sg(outs.fused):
         return AttributionResult(STAGE_FUSION, branch)
 
-    # 4. Reranker demotion — with a reranker configured, the returned top_k is produced by
+    # 5. Reranker demotion — with a reranker configured, the returned top_k is produced by
     #    the reranker reordering its full candidate_n input. Any surviving miss here is the
     #    reranker pushing the gold chunk past the cutoff (upstream candidate/fusion failures
     #    were already returned above, so control only reaches here with the reranker's input
@@ -126,11 +137,11 @@ def attribute(
         if not sg(outs.final):
             return AttributionResult(STAGE_RERANKER_DEMOTION, branch)
 
-    # 5. Final cutoff — (no reranker) ranking placed a gold chunk just past top_k.
+    # 6. Final cutoff — (no reranker) ranking placed a gold chunk just past top_k.
     if not sg(outs.final):
         return AttributionResult(STAGE_FINAL_CUTOFF, branch)
 
-    # 6. Budget cutoff — top_k had it, but the budget packing policy dropped it.
+    # 7. Budget cutoff — top_k had it, but the budget packing policy dropped it.
     if outs.budget_packed is not None and not sg(outs.budget_packed):
         return AttributionResult(STAGE_BUDGET_CUTOFF, branch)
 

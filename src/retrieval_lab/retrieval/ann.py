@@ -31,11 +31,15 @@ class ANNDenseRetriever:
         m: int = 16,
         ef_construction: int = 200,
         ef: int = 50,
+        random_seed: int = 100,
     ) -> None:
+        if m <= 0 or ef_construction <= 0 or ef <= 0:
+            raise ValueError("HNSW m, ef_construction, and ef must be positive")
         self.embedder = embedder
         self.m = m
         self.ef_construction = ef_construction
         self.ef = ef
+        self.random_seed = random_seed
         self.name = f"hnsw(M={m},ef={ef})"
         self._chunks: list[Chunk] = []
         self._index = None
@@ -51,7 +55,12 @@ class ANNDenseRetriever:
         vectors = self.embedder.embed_passage([c.text for c in self._chunks])
         n, dim = vectors.shape if vectors.size else (0, self.embedder.dim)
         index = hnswlib.Index(space="cosine", dim=dim)
-        index.init_index(max_elements=max(1, n), ef_construction=self.ef_construction, M=self.m)
+        index.init_index(
+            max_elements=max(1, n),
+            ef_construction=self.ef_construction,
+            M=self.m,
+            random_seed=self.random_seed,
+        )
         if n:
             index.add_items(np.asarray(vectors, dtype=np.float32), np.arange(n))
         index.set_ef(max(self.ef, 1))
@@ -73,6 +82,14 @@ class ANNDenseRetriever:
 
     def retrieve(self, query: str, k: int) -> list[Chunk]:
         return [c for c, _ in self.retrieve_scored(query, k)]
+
+    @property
+    def index_nbytes(self) -> int:
+        """Serialized HNSW graph size (a stable approximation of index memory)."""
+        if self._index is None:
+            return 0
+        size = getattr(self._index, "index_file_size", None)
+        return int(size()) if size is not None else 0
 
 
 def ann_vs_exact_recall(

@@ -1,157 +1,213 @@
 # Retrieval Lab
 
-A corpus-specific retrieval benchmark and **deterministic, stage-level failure-attribution
-engine** for RAG pipelines. On *your* corpus it answers two questions:
+Retrieval Lab benchmarks RAG retrieval configurations on your corpus and explains where failed
+queries were lost.
 
-1. **Which configuration retrieves best**, under a fair context/cost budget?
-2. **For each failing query, which stage caused the failure?** — chunking, dense/sparse
-   candidate generation, fusion, reranking, the final cutoff, or budget packing.
+It compares chunking, embedding, dense/BM25/hybrid retrieval, reranking, token budgets, and
+exact or HNSW indexes. Each run produces a self-contained HTML report with ranked
+configurations, confidence intervals, failure attribution, cost measurements, filters, and
+quality-versus-context trade-offs.
 
-Existing tools tell you *that* a query failed. Retrieval Lab tells you *where* it failed,
-using chunking-independent source-span gold and one coverage predicate shared by the scorer
-and the attribution engine, so they can never disagree.
+## Why Retrieval Lab?
 
-> Design authority: `PROJECTS-TECHNICAL-SPEC.md` Part I. This README is a summary; the spec
-> governs.
+Aggregate retrieval scores answer *which configuration won*. They do not explain *why a query
+missed*. Retrieval Lab records each stage of the retrieval pipeline and attributes every miss
+to the earliest stage that lost the required evidence:
 
-## Limitations (read first)
+`representation` → `ann_index` → `candidate_generation` → `fusion` →
+`reranker_demotion` → `final_cutoff` → `budget_cutoff`
 
-1. Results are relative to your query set; a thin or biased set yields a biased winner.
-2. Recall against single-alternative gold is a **lower bound**.
-3. Attribution needs a stage-decomposable pipeline; black-box retrievers get scores only.
-4. Latency/cost axes are environment-specific; only quality and token-budget axes transfer.
+Gold answers use source-document character spans rather than chunk IDs. This keeps evaluation
+stable while chunking strategies change, and lets the scorer reconstruct answers covered by
+multiple retrieved chunks.
 
-## Quickstart
+## Quick start
 
-Install with a real embedding model (e5/bge run locally — no API key, no data leaves your
-machine) and point it at your corpus:
-
-```bash
-pip install "retrieval-lab[real-embed]"
-
-retrieval-lab run --corpus docs.jsonl --queries queries.jsonl \
-    --embed-models e5 --chunkers fixed,recursive --retrieval dense,hybrid \
-    --rerank none,lexical --top-k 5 --candidate-n 50 \
-    --json out.json --html report.html --fail-under 0.8    # --fail-under = CI quality gate
-
-retrieval-lab explain  --json out.json --query-id Q17      # per-stage failure attribution
-retrieval-lab pareto   --json out.json                     # quality × retrieved-tokens frontier
-retrieval-lab geometry --corpus docs.jsonl --embed-model e5  # embedding-space risk indicators
-```
-
-Swap `--embed-models e5,bge` to put two real models head-to-head on *your* data. Add
-`--measure-latency` for p50/p95 latency and index size — reported but flagged
-**environment-specific** (only quality and the token budget transfer across machines).
-
-### Just want to see it work? (no download)
+Try the offline demo:
 
 ```bash
 pip install retrieval-lab
-retrieval-lab demo            # realistic corpus, keyless, writes report.html — instant
+retrieval-lab demo
 ```
 
-The `demo` runs fully offline with a **keyless deterministic embedder** — a hashing-trick
-stand-in that needs no model download, so the whole thing (and the test suite) is reproducible
-in CI. It's great for trying the tool and it's what the tests run on, **but it is not a
-semantic embedder** — its "dense" retrieval is really fuzzy lexical matching. For real
-retrieval quality, use `--embed-models e5` (or `bge`) as above. The demo still shows the
-differentiator: hit@k ~0.44–0.94 across configs, with failures attributed to
-`candidate_generation`, `fusion`, `reranker_demotion`, and `final_cutoff`.
-
-### Which embedder?
-
-| name | what it is | key? |
-|------|-----------|------|
-| `e5`, `bge` | real local models (sentence-transformers), `[real-embed]` extra | no |
-| `det` | keyless deterministic stand-in (default; CI/offline only) | no |
-| OpenAI/Cohere | API models — a small adapter reading a key from the env (not built in yet) | yes |
-
-The tool is embedder-agnostic, so its real job is to tell you *which of these actually wins on
-your corpus* — often the free local model is enough.
-
-- **`docs.jsonl`** — one `{"id", "text"}` per line.
-- **`queries.jsonl`** — one query per line with **source-span gold** (character offsets +
-  `quoted_text`, optionally a `source_version` hash). Offsets are verified at load and the
-  tool **fails closed** on any drift.
-
-Don't hand-compute offsets — author gold from **answer quotes** and let the tool stamp them:
+The demo uses a deterministic test embedder and requires no model download or API key. For a
+real benchmark with local embedding and reranking models:
 
 ```bash
-# spec.jsonl:  {"id":"Q1","text":"what is CX-429?","source_id":"D1","answer":"error code CX-429"}
+pip install "retrieval-lab[real-embed,rerank]"
+
+retrieval-lab run \
+  --corpus docs.jsonl \
+  --queries queries.jsonl \
+  --embed-models e5,bge \
+  --chunkers fixed:200,fixed:400,recursive:400,parentchild:800x200 \
+  --retrieval dense,sparse,hybrid \
+  --rerank none,ce \
+  --candidate-n 15 \
+  --top-k 5 \
+  --measure-latency \
+  --json results.json \
+  --html report.html
+```
+
+Open `report.html` directly in a browser. It has no server or external frontend dependencies,
+supports light and dark themes, and remains usable without network access.
+
+## Input data
+
+A run needs two JSONL files.
+
+### `docs.jsonl`
+
+One source document per line:
+
+```json
+{"id":"D1","text":"Cirrus returns error code CX-429 when an API key is invalid."}
+{"id":"D2","text":"Requests are limited to 100 per minute.","meta":{"title":"Rate limits"}}
+```
+
+`id` and `text` are required. `meta` is optional.
+
+### `queries.jsonl`
+
+One labeled query per line:
+
+```json
+{"id":"Q1","text":"Which error indicates an invalid API key?","gold":{"alternatives":[{"required_spans":[{"source_id":"D1","start":15,"end":32,"quoted_text":"error code CX-429"}]}]}}
+```
+
+Each gold span points into the original document text. On load, Retrieval Lab verifies that
+`quoted_text` exactly matches `[start:end]`; stale or incorrect offsets fail closed.
+
+Do not calculate offsets manually. Create a small authoring file with answer quotes:
+
+```json
+{"id":"Q1","text":"Which error indicates an invalid API key?","source_id":"D1","answer":"error code CX-429"}
+```
+
+Then generate verified query gold:
+
+```bash
 retrieval-lab make-gold --corpus docs.jsonl --spec spec.jsonl --out queries.jsonl
 ```
 
-`answer` = one required span; `answer_all: [...]` = several required spans (conjunction);
-`alternatives: [...]` = several acceptable answers (disjunction). A quote that isn't found is
-rejected at authoring time.
+Use `answer_all` when several spans are required together, or `alternatives` when any one of
+several answers is acceptable.
 
-### Import real benchmarks
+## What gets compared
 
-SQuAD's `answer_start` offsets are source-span gold already, so it imports almost 1:1 (its
-multiple human answers become alternatives; `is_impossible` questions are skipped):
+- **Chunking:** fixed-size, recursive, semantic, and parent-child
+- **Embedding:** local E5 and BGE models, plus a deterministic offline test embedder
+- **Retrieval:** exact dense, BM25 sparse, or hybrid retrieval with reciprocal rank fusion
+- **Reranking:** none, lexical overlap, or a sentence-transformers cross-encoder
+- **Cutoffs:** candidate count, final top-k, and optional context-token budget
+- **Dense index:** exact search or HNSW approximate nearest-neighbor search
+
+The HTML report ranks configurations by hit@k, shows MRR and confidence intervals, attributes
+misses by pipeline stage, and reports retrieved tokens. With latency measurement enabled, it
+also reports warm-query p50/p95 latency, index build time, and index size.
+
+## Exact search and HNSW
+
+Exact dense search is the default and is usually the right baseline for small and medium
+corpora. For larger indexes, compare it with HNSW in the same sweep:
 
 ```bash
-retrieval-lab import-squad --input dev-v2.0.json --out-dir ./squad   # downloaded by you
+pip install "retrieval-lab[real-embed,ann]"
+
+retrieval-lab run \
+  --corpus docs.jsonl \
+  --queries queries.jsonl \
+  --embed-models e5 \
+  --retrieval dense,hybrid \
+  --dense-index exact,hnsw \
+  --hnsw-m 16 \
+  --hnsw-ef 50 \
+  --ann-diagnostic-queries 100 \
+  --measure-latency \
+  --json results.json \
+  --html report.html
+```
+
+For HNSW configurations, the report measures candidate recall against exact search and
+attributes approximation-only misses to `ann_index`. Some Windows/Python combinations require
+Microsoft C++ Build Tools to install `hnswlib`.
+
+## Import benchmark datasets
+
+Import SQuAD:
+
+```bash
+retrieval-lab import-squad --input dev-v2.0.json --out-dir ./squad
 retrieval-lab run --corpus ./squad/docs.jsonl --queries ./squad/queries.jsonl
 ```
 
-BEIR (`corpus.jsonl` + `queries.jsonl` + `qrels.tsv`) also imports — relevance is
-passage-level, so gold covers the whole passage (a coarser, stricter notion than BEIR's
-qrels; use a large chunk size for the closest correspondence):
+Import BEIR:
 
 ```bash
-retrieval-lab import-beir --corpus corpus.jsonl --queries queries.jsonl --qrels qrels.tsv \
-    --out-dir ./beir
+retrieval-lab import-beir \
+  --corpus corpus.jsonl \
+  --queries queries.jsonl \
+  --qrels qrels.tsv \
+  --out-dir ./beir
 ```
 
-Every imported answer is verified against the source as it's converted; anything that doesn't
-match is skipped, never trusted.
+SQuAD answer offsets map directly to source-span gold. BEIR relevance labels apply to complete
+passages, so its imported gold is coarser and stricter than answer-span evaluation.
 
-Validated on real data: importing 400 SQuAD v1.1 questions verified every gold span (0
-skipped), and a keyless-vs-e5 sweep gave `e5` dense **0.94 [0.92, 0.96]** vs the keyless
-stand-in's **0.76 [0.72, 0.80]** — a concrete measure of how much a real embedder buys you,
-with the rest of the misses attributed to `final_cutoff` (answer just past `top_k`).
-- Exit codes for CI: `0` ok, `1` baseline-broken or `--fail-under` gate missed, `2` input /
-  gold-verification error.
+## CI and automation
 
-## Data model in one breath
-
-Gold is defined over **source-document character spans**, never chunk indices — because
-changing the chunker changes the chunks. A query is a **hit** when the union of retrieved
-chunks covers a required span to ≥ 80%; the *same* predicate drives the scorer and the
-attribution engine, so they can never disagree. When a query misses, attribution names the
-earliest failing DAG stage: `representation`, `candidate_generation`, `fusion`,
-`reranker_demotion`, `final_cutoff`, or `budget_cutoff`.
-
-## Install & extras
-
-Core is numpy + stdlib only — dense, BM25, hybrid, attribution, metrics, reporting, and the
-CLI all run keyless. Heavy paths are opt-in extras:
-
-| extra | adds |
-|-------|------|
-| `[real-embed]` | real e5 / bge embedders via sentence-transformers |
-| `[rerank]` | cross-encoder reranker |
-| `[ann]` | HNSW approximate dense index |
-| `[dev]` | pytest + ruff |
-
-## Test
+Use `--fail-under` as a quality gate:
 
 ```bash
-python -m pytest        # keyless, network-free; includes the planted-failure recovery suite
+retrieval-lab run \
+  --corpus docs.jsonl \
+  --queries queries.jsonl \
+  --fail-under 0.80 \
+  --json results.json
+```
+
+Exit codes:
+
+- `0`: run completed and quality gates passed
+- `1`: a baseline or `--fail-under` quality gate failed
+- `2`: invalid input, configuration, or gold data
+
+Additional commands:
+
+```bash
+retrieval-lab explain --json results.json --query-id Q17
+retrieval-lab pareto --json results.json
+retrieval-lab geometry --corpus docs.jsonl --embed-model e5
+```
+
+## Installation options
+
+- `retrieval-lab`: lightweight core with NumPy and the deterministic embedder
+- `retrieval-lab[real-embed]`: E5 and BGE through sentence-transformers
+- `retrieval-lab[rerank]`: cross-encoder reranking
+- `retrieval-lab[ann]`: HNSW approximate dense indexes
+- `retrieval-lab[dev]`: pytest and Ruff for development
+
+Python 3.10–3.12 is supported.
+
+## Evaluation limits
+
+- Results are only as representative as the labeled query set.
+- Missing valid gold alternatives make measured recall a lower bound.
+- Latency and index cost depend on the machine running the benchmark.
+- Stage attribution requires a decomposable retrieval pipeline; black-box retrievers can only
+  be scored at their observable output.
+
+## Development
+
+```bash
+python -m pytest
 ruff check src tests
 ```
 
-The whole test/validation path is keyless and deterministic — a hashing-trick embedder keeps
-the constructed-ground-truth recovery suite reproducible in CI. Real models and HNSW have
-opt-in tests (`RLAB_REAL_EMBED=1`; install `[ann]`).
+The core test suite is deterministic and network-free. CI separately exercises the real HNSW
+integration; real embedding-model tests are opt-in with `RLAB_REAL_EMBED=1`.
 
-## Status
-
-`0.1.0` — beta. Feature-complete against the design spec: span-gold foundation, dense / BM25 /
-hybrid retrieval, RRF fusion, cross-encoder reranking, the full six-stage DAG failure
-attribution, Wilson/bootstrap confidence intervals with fail-closed validity gates, a config
-sweep with real (e5/bge) or keyless embedders, token-budget + Pareto fair comparison,
-geometry lenses, an ANN/HNSW option, JSON/HTML reporting, a gold-authoring helper, and
-SQuAD/BEIR importers. The public API (the names exported from `retrieval_lab`) follows
-semantic versioning; submodule internals may change between minor versions.
+Retrieval Lab is currently beta. Public names exported from `retrieval_lab` follow semantic
+versioning; internal submodules may change between minor releases.

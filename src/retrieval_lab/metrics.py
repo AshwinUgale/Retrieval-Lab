@@ -90,21 +90,38 @@ class ConfigCost:
     mean_ms: float
     p50_ms: float
     p95_ms: float
-    index_bytes: int  # rough: dense vector matrix size (0 for sparse-only)
+    index_bytes: int  # exact vector matrix or serialized HNSW graph (0 for sparse-only)
+    build_ms: float | None = None
 
 
-def latency_stats(samples_ms: Sequence[float], index_bytes: int = 0) -> ConfigCost:
+def latency_stats(
+    samples_ms: Sequence[float],
+    index_bytes: int = 0,
+    build_ms: float | None = None,
+) -> ConfigCost:
     """Summarize per-query retrieval latencies into p50/p95/mean."""
     arr = np.asarray(samples_ms, dtype=float)
     if arr.size == 0:
-        return ConfigCost(0, 0.0, 0.0, 0.0, index_bytes)
+        return ConfigCost(0, 0.0, 0.0, 0.0, index_bytes, build_ms)
     return ConfigCost(
         n=int(arr.size),
         mean_ms=float(arr.mean()),
         p50_ms=float(np.percentile(arr, 50)),
         p95_ms=float(np.percentile(arr, 95)),
         index_bytes=int(index_bytes),
+        build_ms=None if build_ms is None else float(build_ms),
     )
+
+
+@dataclass
+class ANNDiagnostic:
+    """How closely an approximate index reproduced exact dense top-k candidates."""
+
+    k: int
+    n: int
+    mean_recall: float
+    min_recall: float
+    queries_below_full_recall: int
 
 
 @dataclass

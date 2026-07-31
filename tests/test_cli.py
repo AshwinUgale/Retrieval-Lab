@@ -74,6 +74,26 @@ def test_sparse_only_does_not_load_optional_embedding_model(demo):
     assert code == EXIT_OK
 
 
+def test_hnsw_missing_extra_is_a_clean_input_error(demo, capsys, monkeypatch):
+    import retrieval_lab.sweep as sweep_module
+
+    class MissingHNSW:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def index(self, _chunks):
+            raise ImportError("install retrieval-lab[ann]")
+
+    monkeypatch.setattr(sweep_module, "ANNDenseRetriever", MissingHNSW)
+    docs, queries, _tmp = demo
+    code = main([
+        "run", "--corpus", str(docs), "--queries", str(queries),
+        "--dense-index", "hnsw", "--min-sample", "1",
+    ])
+    assert code == EXIT_INPUT_ERROR
+    assert "retrieval-lab[ann]" in capsys.readouterr().err
+
+
 def test_offset_drift_fails_closed(demo, tmp_path):
     docs, _queries, _tmp = demo
     # A queries file whose quoted_text does not match the source -> fail closed, exit 2.
@@ -88,11 +108,12 @@ def test_offset_drift_fails_closed(demo, tmp_path):
     assert code == EXIT_INPUT_ERROR
 
 
-def test_unknown_embed_model_is_an_error(demo):
+def test_unknown_embed_model_is_an_error(demo, capsys):
     docs, queries, _tmp = demo
-    with pytest.raises(ValueError):
-        main(["run", "--corpus", str(docs), "--queries", str(queries),
-              "--embed-models", "nonexistent", "--min-sample", "1"])
+    code = main(["run", "--corpus", str(docs), "--queries", str(queries),
+                 "--embed-models", "nonexistent", "--min-sample", "1"])
+    assert code == EXIT_INPUT_ERROR
+    assert "unknown embed model" in capsys.readouterr().err
 
 
 def test_run_writes_html(demo, tmp_path):

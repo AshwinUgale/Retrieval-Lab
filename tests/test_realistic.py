@@ -71,7 +71,7 @@ def test_rare_term_query_favors_sparse_over_dense_on_small_chunks():
     _, _, sweep = _sweep()
     m = sweep.metrics_by_config()
     dense_id = next(k for k in m if k.startswith("det|small|dense|rerank=none"))
-    sparse_id = next(k for k in m if k.startswith("det|small|sparse|rerank=none"))
+    sparse_id = next(k for k in m if k.startswith("none|small|sparse|rerank=none"))
     by = sweep.results_by_config
 
     def hit(cid, qid):

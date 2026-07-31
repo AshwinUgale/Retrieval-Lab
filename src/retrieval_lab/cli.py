@@ -125,6 +125,11 @@ def _build_spec(args: argparse.Namespace) -> SweepSpec:
         top_k=args.top_k,
         candidate_n=args.candidate_n,
         budgets=tuple(budgets),
+        dense_indexes=tuple(_csv(args.dense_index)),
+        hnsw_m=args.hnsw_m,
+        hnsw_ef_construction=args.hnsw_ef_construction,
+        hnsw_ef=args.hnsw_ef,
+        ann_diagnostic_queries=args.ann_diagnostic_queries,
     )
 
 
@@ -143,9 +148,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("error: no queries loaded (all refused or empty).", file=sys.stderr)
         return EXIT_INPUT_ERROR
 
-    spec = _build_spec(args)
-    sweep = run_sweep(documents, queries, spec, min_sample=args.min_sample, seed=args.seed,
-                      measure_latency=getattr(args, "measure_latency", False))
+    try:
+        spec = _build_spec(args)
+        sweep = run_sweep(
+            documents,
+            queries,
+            spec,
+            min_sample=args.min_sample,
+            seed=args.seed,
+            measure_latency=getattr(args, "measure_latency", False),
+        )
+    except (ImportError, ValueError) as exc:
+        print(f"error: invalid or unavailable configuration: {exc}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
     print(render_report(sweep, top=args.top))
     if args.json:
         write_json(sweep, args.json)
@@ -209,6 +224,8 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     demo_args = argparse.Namespace(
         corpus=str(docs_path), queries=str(queries_path),
         embed_models="det", budget_tokens="", min_sample=1, seed=0, top=None, fail_under=None,
+        dense_index="exact", hnsw_m=16, hnsw_ef_construction=200, hnsw_ef=50,
+        ann_diagnostic_queries=100,
         json=str(Path(out_dir) / "out.json"), html=str(Path(out_dir) / "report.html"),
         **params,
     )
@@ -294,8 +311,31 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--corpus", required=True, help="documents JSONL ({id, text, meta?})")
     run.add_argument("--queries", required=True, help="queries JSONL (with source-span gold)")
     run.add_argument("--embed-models", default="det", help="csv: det,e5,bge")
-    run.add_argument("--chunkers", default="fixed", help="csv: fixed[:size],recursive[:size]")
+    run.add_argument(
+        "--chunkers",
+        default="fixed",
+        help="csv: fixed[:size], recursive[:size], semantic[:pct], parentchild[:PxC]",
+    )
     run.add_argument("--retrieval", default="hybrid", help="csv: dense,sparse,hybrid")
+    run.add_argument(
+        "--dense-index",
+        default="exact",
+        help="csv: exact,hnsw (HNSW requires retrieval-lab[ann])",
+    )
+    run.add_argument("--hnsw-m", type=int, default=16, help="HNSW graph neighbors per node")
+    run.add_argument(
+        "--hnsw-ef-construction",
+        type=int,
+        default=200,
+        help="HNSW build-time search width",
+    )
+    run.add_argument("--hnsw-ef", type=int, default=50, help="HNSW query-time search width")
+    run.add_argument(
+        "--ann-diagnostic-queries",
+        type=int,
+        default=100,
+        help="labeled queries sampled for HNSW-vs-exact candidate recall",
+    )
     run.add_argument("--rerank", default="none", help="csv: none,lexical,ce")
     run.add_argument("--top-k", type=int, default=5)
     run.add_argument("--candidate-n", type=int, default=50)

@@ -12,6 +12,7 @@ built once per chunker.
 
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from retrieval_lab.embedding.base import Embedder
 from retrieval_lab.gold import DEFAULT_MIN_GOLD_COVERAGE, Query
 from retrieval_lab.metrics import (
     DEFAULT_MIN_SAMPLE,
+    ANNDiagnostic,
     Comparison,
     ConfigCost,
     ConfigMetrics,
@@ -32,6 +34,7 @@ from retrieval_lab.metrics import (
 )
 from retrieval_lab.models import Config, Document, QueryResult
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query, score_and_attribute
+from retrieval_lab.retrieval.ann import ANNDenseRetriever, ann_vs_exact_recall
 from retrieval_lab.retrieval.bm25 import BM25Retriever
 from retrieval_lab.retrieval.dense import DenseRetriever
 from retrieval_lab.retrieval.rerank import Reranker
@@ -53,12 +56,20 @@ class SweepSpec:
     top_k: int = 5
     candidate_n: int = 50
     budgets: Sequence[int | None] = (None,)
+    dense_indexes: Sequence[str] = ("exact",)
+    hnsw_m: int = 16
+    hnsw_ef_construction: int = 200
+    hnsw_ef: int = 50
+    ann_diagnostic_queries: int = 100
 
     def n_configs(self) -> int:
         # Sparse retrieval is embedder-independent and is therefore evaluated once, not once
         # per configured dense model.
+        index_count = len(tuple(dict.fromkeys(self.dense_indexes)))
         embedding_variants = (
-            len(self.embedders) * sum(m in _DENSE_MODES for m in self.retrieval_modes)
+            len(self.embedders)
+            * index_count
+            * sum(m in _DENSE_MODES for m in self.retrieval_modes)
             + sum(m == "sparse" for m in self.retrieval_modes)
         )
         return (
@@ -77,6 +88,7 @@ class SweepResult:
     metrics: list[ConfigMetrics]
     validity: ValidityReport
     cost: dict[str, ConfigCost] | None = None  # populated only when measure_latency=True
+    ann_diagnostics: dict[str, ANNDiagnostic] = field(default_factory=dict)
 
     def metrics_by_config(self) -> dict[str, ConfigMetrics]:
         return {m.config_id: m for m in self.metrics}
@@ -119,37 +131,105 @@ def run_sweep(
     and disclosed as such — off by default so the deterministic test path is unaffected.
     """
     docs = list(documents.values())
+    index_names = tuple(dict.fromkeys(spec.dense_indexes))
+    unknown_indexes = set(index_names) - {"exact", "hnsw"}
+    if unknown_indexes:
+        raise ValueError(
+            f"unknown dense index(es) {sorted(unknown_indexes)!r}; use exact and/or hnsw"
+        )
+    if any(mode in _DENSE_MODES for mode in spec.retrieval_modes) and not index_names:
+        raise ValueError("dense/hybrid retrieval needs at least one dense index")
+    if spec.ann_diagnostic_queries < 0:
+        raise ValueError("ann_diagnostic_queries must be non-negative")
+    if "hnsw" in index_names and spec.hnsw_ef < spec.candidate_n:
+        raise ValueError("hnsw_ef must be greater than or equal to candidate_n")
+
     results_by_config: dict[str, list[QueryResult]] = {}
     metrics: list[ConfigMetrics] = []
     cost: dict[str, ConfigCost] | None = {} if measure_latency else None
+    ann_diagnostics: dict[str, ANNDiagnostic] = {}
 
     for ch_name, chunker in spec.chunkers.items():
         chunks = chunker.chunk_corpus(docs)
-        sparse = (
-            BM25Retriever().index(chunks)
-            if any(mode in _SPARSE_MODES for mode in spec.retrieval_modes)
-            else None
-        )  # once per chunker, only when needed
+        sparse = None
+        sparse_build_ms = 0.0
+        if any(mode in _SPARSE_MODES for mode in spec.retrieval_modes):
+            t0 = time.perf_counter()
+            sparse = BM25Retriever().index(chunks)
+            sparse_build_ms = (time.perf_counter() - t0) * 1000.0
 
         # Parent-child chunkers return parents for retrieved children; the pipeline applies
         # this to every stage set. Duck-typed so any chunker exposing `expand` participates.
         return_expander = getattr(chunker, "expand", None)
 
+        dense_cache: dict[tuple[str, str], DenseRetriever | ANNDenseRetriever] = {}
+        exact_cache: dict[str, DenseRetriever] = {}
+        build_ms: dict[tuple[str, str], float] = {}
+        ann_diag_by_embed: dict[str, ANNDiagnostic] = {}
+
+        if any(mode in _DENSE_MODES for mode in spec.retrieval_modes):
+            for emb_name, embedder in spec.embedders.items():
+                if embedder is None:
+                    raise ValueError(f"dense/hybrid retrieval needs embedder {emb_name!r}")
+
+                # Time passage embedding once, then add it to each index's own construction
+                # time so exact-vs-HNSW build costs are comparable.
+                t0 = time.perf_counter()
+                embedder.embed_passage([c.text for c in chunks])
+                embedding_ms = (time.perf_counter() - t0) * 1000.0
+
+                t0 = time.perf_counter()
+                exact = DenseRetriever(embedder).index(chunks)
+                exact_build_ms = embedding_ms + (time.perf_counter() - t0) * 1000.0
+                exact_cache[emb_name] = exact
+                if "exact" in index_names:
+                    dense_cache[(emb_name, "exact")] = exact
+                    build_ms[(emb_name, "exact")] = exact_build_ms
+
+                if "hnsw" in index_names:
+                    t0 = time.perf_counter()
+                    ann = ANNDenseRetriever(
+                        embedder,
+                        m=spec.hnsw_m,
+                        ef_construction=spec.hnsw_ef_construction,
+                        ef=spec.hnsw_ef,
+                    ).index(chunks)
+                    ann_build_ms = embedding_ms + (time.perf_counter() - t0) * 1000.0
+                    dense_cache[(emb_name, "hnsw")] = ann
+                    build_ms[(emb_name, "hnsw")] = ann_build_ms
+
+                    sample_n = min(spec.ann_diagnostic_queries, len(queries))
+                    sample_ids = sorted(
+                        random.Random(seed).sample(range(len(queries)), sample_n)
+                    )
+                    diag_queries = [queries[i].text for i in sample_ids]
+                    raw_diag = ann_vs_exact_recall(
+                        ann, exact, diag_queries, k=spec.candidate_n
+                    )
+                    per_query = raw_diag["per_query"]
+                    ann_diag_by_embed[emb_name] = ANNDiagnostic(
+                        k=raw_diag["k"],
+                        n=raw_diag["n"],
+                        mean_recall=raw_diag["mean_recall"],
+                        min_recall=min(per_query, default=1.0),
+                        queries_below_full_recall=sum(v < 1.0 for v in per_query),
+                    )
+
+                # Query timings are deliberately warm and comparable across index types.
+                if measure_latency:
+                    embedder.embed_query([q.text for q in queries])
+
         for mode in spec.retrieval_modes:
-            # Sparse retrieval has no embedding dimension. Run it once with an explicit
-            # empty embedder, retaining the first configured label for report compatibility
-            # instead of duplicating identical results for every dense model.
-            embedding_variants = (
-                spec.embedders.items()
-                if mode in _DENSE_MODES
-                else ((next(iter(spec.embedders), "none"), None),)
-            )
-            for emb_name, embedder in embedding_variants:
-                dense = (
-                    DenseRetriever(embedder).index(chunks)
-                    if mode in _DENSE_MODES and embedder is not None
-                    else None
-                )
+            if mode in _DENSE_MODES:
+                variants = [
+                    (emb_name, index_name, dense_cache[(emb_name, index_name)])
+                    for emb_name in spec.embedders
+                    for index_name in index_names
+                ]
+            else:
+                variants = [("none", "none", None)]
+
+            for emb_name, index_name, dense in variants:
                 for rr_name, reranker in spec.rerankers.items():
                     for budget in spec.budgets:
                         config = Config(
@@ -160,11 +240,18 @@ def run_sweep(
                             top_k=spec.top_k,
                             candidate_n=spec.candidate_n,
                             budget_tokens=budget,
+                            dense_index=index_name,
+                            hnsw_m=spec.hnsw_m,
+                            hnsw_ef_construction=spec.hnsw_ef_construction,
+                            hnsw_ef=spec.hnsw_ef,
                         )
                         pipeline = RetrievalPipeline(
                             chunks,
                             config,
                             dense=dense if mode in _DENSE_MODES else None,
+                            dense_reference=(
+                                exact_cache[emb_name] if index_name == "hnsw" else None
+                            ),
                             sparse=sparse if mode in _SPARSE_MODES else None,
                             reranker=reranker if rr_name else None,
                             return_expander=return_expander,
@@ -177,17 +264,29 @@ def run_sweep(
                             results, samples = [], []
                             for q in queries:
                                 t0 = time.perf_counter()
-                                outs = pipeline.run(q.text)
+                                outs = pipeline.run(q.text, include_reference=False)
                                 samples.append((time.perf_counter() - t0) * 1000.0)
+                                pipeline.attach_exact_reference(q.text, outs)
                                 results.append(
                                     score_and_attribute(q, outs, config, min_gold_coverage)
                                 )
-                            index_bytes = dense.index_nbytes if mode in _DENSE_MODES else 0
-                            cost[config.id] = latency_stats(samples, index_bytes)
+                            index_bytes = (
+                                dense.index_nbytes
+                                if mode in _DENSE_MODES and dense is not None
+                                else 0
+                            )
+                            config_build_ms = sparse_build_ms if mode in _SPARSE_MODES else 0.0
+                            if mode in _DENSE_MODES:
+                                config_build_ms += build_ms[(emb_name, index_name)]
+                            cost[config.id] = latency_stats(
+                                samples, index_bytes, config_build_ms
+                            )
                         results_by_config[config.id] = results
                         metrics.append(
                             aggregate_config(results, config.id, min_sample, seed)
                         )
+                        if index_name == "hnsw":
+                            ann_diagnostics[config.id] = ann_diag_by_embed[emb_name]
 
     return SweepResult(
         n_docs=len(docs),
@@ -196,4 +295,5 @@ def run_sweep(
         metrics=metrics,
         validity=validity_report(metrics),
         cost=cost,
+        ann_diagnostics=ann_diagnostics,
     )

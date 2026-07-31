@@ -109,7 +109,8 @@ def test_sparse_only_sweep_does_not_use_or_duplicate_embedders():
     result = run_sweep(docs, queries, spec, min_sample=1)
 
     assert len(result.metrics) == spec.n_configs() == 1
-    assert result.metrics[0].config_id.startswith("unused-a|c|sparse|")
+    assert result.metrics[0].config_id.startswith("none|c|sparse|")
+    assert "|index=none" in result.metrics[0].config_id
 
 
 def test_best_is_suppressed_below_minimum_sample():

@@ -15,6 +15,7 @@ from retrieval_lab.attribution import StageOutputs, attribute
 from retrieval_lab.budget import pack_by_budget
 from retrieval_lab.gold import DEFAULT_MIN_GOLD_COVERAGE, Query
 from retrieval_lab.models import Chunk, Config, QueryResult
+from retrieval_lab.retrieval.ann import ANNDenseRetriever
 from retrieval_lab.retrieval.bm25 import BM25Retriever
 from retrieval_lab.retrieval.dense import DenseRetriever
 from retrieval_lab.retrieval.fusion import DEFAULT_RRF_C, reciprocal_rank_fusion
@@ -47,7 +48,8 @@ class RetrievalPipeline:
         self,
         chunks: Sequence[Chunk],
         config: Config,
-        dense: DenseRetriever | None = None,
+        dense: DenseRetriever | ANNDenseRetriever | None = None,
+        dense_reference: DenseRetriever | None = None,
         sparse: BM25Retriever | None = None,
         reranker: Reranker | None = None,
         return_expander: Callable[[Sequence[Chunk]], list[Chunk]] | None = None,
@@ -56,6 +58,7 @@ class RetrievalPipeline:
         self.chunks = list(chunks)
         self.config = config
         self.dense = dense
+        self.dense_reference = dense_reference
         self.sparse = sparse
         self.reranker = reranker
         # Maps ranked indexed units to the units actually returned (e.g. parent-child:
@@ -72,21 +75,35 @@ class RetrievalPipeline:
         if config.rerank and reranker is None:
             raise ValueError(f"config requests reranker {config.rerank!r} but none supplied")
 
-    def run(self, query_text: str) -> StageOutputs:
+    def run(self, query_text: str, include_reference: bool = True) -> StageOutputs:
         cfg = self.config
         n = cfg.candidate_n
         dense_c = self.dense.retrieve(query_text, n) if cfg.retrieval in _DENSE_MODES else None
         sparse_c = self.sparse.retrieve(query_text, n) if cfg.retrieval in _SPARSE_MODES else None
+        exact_dense_c = (
+            self.dense_reference.retrieve(query_text, n)
+            if (
+                include_reference
+                and cfg.retrieval in _DENSE_MODES
+                and self.dense_reference is not None
+            )
+            else None
+        )
 
         fused = None
+        exact_union = None
         if cfg.retrieval == "dense":
             union = list(dense_c or [])
             shortlist = list(dense_c or [])
+            if exact_dense_c is not None:
+                exact_union = list(exact_dense_c)
         elif cfg.retrieval == "sparse":
             union = list(sparse_c or [])
             shortlist = list(sparse_c or [])
         else:  # hybrid
             union = _dedup([*(dense_c or []), *(sparse_c or [])])
+            if exact_dense_c is not None:
+                exact_union = _dedup([*exact_dense_c, *(sparse_c or [])])
             fused = reciprocal_rank_fusion([dense_c or [], sparse_c or []], self.rrf_c)[:n]
             shortlist = fused
 
@@ -119,6 +136,7 @@ class RetrievalPipeline:
             final=final,
             dense_candidates=None if dense_c is None else expand(dense_c),
             sparse_candidates=None if sparse_c is None else expand(sparse_c),
+            exact_candidate_union=None if exact_union is None else expand(exact_union),
             fused=None if fused is None else expand(fused),
             reranker_input=(
                 None if reranker_input_children is None else expand(reranker_input_children)
@@ -126,6 +144,19 @@ class RetrievalPipeline:
             reranked=None if reranked_children is None else expand(reranked_children),
             budget_packed=budget_packed,
         )
+
+    def attach_exact_reference(self, query_text: str, outs: StageOutputs) -> None:
+        """Attach ANN's exact counterfactual after timed retrieval has completed."""
+        if self.dense_reference is None or self.config.retrieval not in _DENSE_MODES:
+            return
+        expand = self.return_expander or (lambda xs: list(xs))
+        exact_dense = expand(self.dense_reference.retrieve(query_text, self.config.candidate_n))
+        if self.config.retrieval == "hybrid":
+            outs.exact_candidate_union = _dedup(
+                [*exact_dense, *(outs.sparse_candidates or [])]
+            )
+        else:
+            outs.exact_candidate_union = exact_dense
 
 
 def score_and_attribute(

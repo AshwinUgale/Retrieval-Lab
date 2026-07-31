@@ -87,9 +87,11 @@ def test_html_report_is_self_contained(tmp_path):
     html = render_html(sweep)
     assert html.startswith("<!doctype html>")
     assert "Retrieval Lab" in html and "Pareto" in html
-    # Self-contained: no external resource references.
+    assert 'id=theme-toggle' in html
+    assert "Dark mode" in html and "Light mode" in html
+    # Self-contained: no CDN / remote assets (inline CSS + optional inline JS only).
     assert "http://" not in html and "https://" not in html
-    assert "<script" not in html
+    assert 'src="' not in html and "src='" not in html
     p = tmp_path / "nested" / "report.html"
     write_html(sweep, p)  # creates parent dirs
     assert p.exists() and p.read_text(encoding="utf-8").startswith("<!doctype html>")
@@ -103,8 +105,15 @@ def test_html_report_is_readable_and_well_formed():
     sweep = _sweep()
     html = render_html(sweep)
     # Readability: a glossary + colour-coded stage legend, and config chips (not raw ids).
-    assert "How to read this" in html
+    assert "How to read this report" in html
+    assert "Hit@k — was the evidence found?" in html
+    assert "Fragile hit — worked across pieces" in html
     assert "Final cutoff" in html  # a stage explained in plain English
+    assert "Quality vs. context trade-offs" in html
+    assert "Pareto frontier" in html and "outer edge of best trade-offs" in html
+    # Validity is a prominent trust check before the reading guide, not an unexplained footer.
+    assert "Can you trust this comparison? Checks passed" in html
+    assert html.index("Can you trust this comparison?") < html.index("How to read this report")
     assert "|dense|" not in html  # the pipe-string config id is never shown raw
     # The Pareto SVG renders marks, and no attribute has the unquoted-class-slash bug.
     assert "<svg" in html and "<circle" in html
@@ -140,3 +149,40 @@ def test_html_does_not_declare_winner_below_minimum_sample():
     assert ">BEST<" not in html
     assert "Best on your query set" not in html
     assert "no aggregate winner" in html
+    assert 'class="trust warnbox"' in html
+    assert "protect against declaring a misleading winner" in html
+
+
+def test_html_report_has_filters_and_pagination_for_large_sweeps():
+    """Large config grids get a browser-local filter/top-N/pager UI (no server)."""
+    docs, queries = build_basic_corpus()
+    # 8 chunkers × 2 modes = 16 configs → triggers top-N + pagination controls.
+    chunkers = {f"c{i}": FixedSizeChunker(chunk_size=120 + 20 * i) for i in range(8)}
+    spec = SweepSpec(
+        embedders={"det": DeterministicEmbedder(dim=512)},
+        chunkers=chunkers,
+        retrieval_modes=("dense", "sparse"),
+        top_k=3,
+        candidate_n=10,
+    )
+    html = render_html(run_sweep(docs, queries, spec, min_sample=1))
+
+    assert 'data-filter="chunker"' in html
+    assert 'data-filter="retrieval"' in html
+    assert 'id="view-mode"' in html
+    assert "Top 15" in html and "All matching" in html
+    assert "pg-prev" in html and "pg-next" in html
+    assert 'aria-live="polite"' in html
+    assert 'aria-label="Previous page"' in html
+    assert "cfg-row" in html and "data-rank=" in html and 'data-i="' in html
+    assert "|dense|" not in html  # pipe-string config ids stay out of the page
+    # Inline script only — still openable as a local file.
+    assert "<script>" in html
+    assert html.count("<script") == 1
+    # No-JS users still receive every row; the browser script applies top-N after load.
+    assert html.count("cfg-row") >= 16
+    assert "All configurations are shown below, so no results are hidden." in html
+    assert 'data-i="16"' in html
+    assert "<thead>" in html and "<tbody>" in html and "scope=col" in html
+    assert 'role="progressbar"' in html
+    assert "<details class=guide><summary>" in html  # collapsed for a large sweep

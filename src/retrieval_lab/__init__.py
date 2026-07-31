@@ -58,7 +58,7 @@ from retrieval_lab.retrieval import (
 # --- The sweep workflow -------------------------------------------------------------
 from retrieval_lab.pipeline import RetrievalPipeline, evaluate_query
 from retrieval_lab.sweep import SweepResult, SweepSpec, run_sweep
-from retrieval_lab.metrics import ConfigMetrics
+from retrieval_lab.metrics import ANNDiagnostic, ConfigMetrics
 
 # --- Reporting ----------------------------------------------------------------------
 from retrieval_lab.report import (
@@ -96,7 +96,7 @@ __all__ = [
     "Reranker", "LexicalReranker", "CrossEncoderReranker",
     # Workflow
     "SweepSpec", "SweepResult", "run_sweep", "RetrievalPipeline", "evaluate_query",
-    "ConfigMetrics",
+    "ConfigMetrics", "ANNDiagnostic",
     # Reporting
     "render_report", "render_pareto", "render_explain", "render_html",
     "write_json", "write_html", "read_json", "pareto_frontier",

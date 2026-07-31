@@ -98,8 +98,14 @@ def test_beir_import_builds_passage_gold_and_alternatives(tmp_path):
     assert {q.id for q in imp.queries} == {"q1", "q2"}
     q1 = next(q for q in imp.queries if q.id == "q1")
     assert len(q1.gold.alternatives) == 2  # d1 and d4 are both relevant -> alternatives
-    # d3 (score 0) is not relevant, so it is never emitted as a document.
-    assert "d3" not in imp.documents
+    # The complete retrieval corpus is retained. Non-relevant d3 is a necessary distractor,
+    # even though it does not appear in the query's gold alternatives.
+    assert set(imp.documents) == {"d1", "d2", "d3", "d4"}
+    assert all(
+        span.source_id != "d3"
+        for alt in q1.gold.alternatives
+        for span in alt.required_spans
+    )
     # A chunk covering a relevant passage satisfies the whole-passage gold.
     d1 = imp.documents["d1"]
     assert satisfies_gold([_whole_chunk(d1)], q1.gold)

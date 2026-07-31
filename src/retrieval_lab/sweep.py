@@ -44,7 +44,9 @@ _SPARSE_MODES = {"sparse", "hybrid"}
 class SweepSpec:
     """The grid to sweep. Keys become the ids used in each ``Config`` and in the report."""
 
-    embedders: Mapping[str, Embedder]
+    # A None value is permitted for sparse-only specs: it preserves the requested model
+    # label in config ids without constructing an unused model.
+    embedders: Mapping[str, Embedder | None]
     chunkers: Mapping[str, Chunker]
     retrieval_modes: Sequence[str] = ("dense", "hybrid")
     rerankers: Mapping[str | None, Reranker | None] = field(default_factory=lambda: {None: None})
@@ -53,10 +55,15 @@ class SweepSpec:
     budgets: Sequence[int | None] = (None,)
 
     def n_configs(self) -> int:
+        # Sparse retrieval is embedder-independent and is therefore evaluated once, not once
+        # per configured dense model.
+        embedding_variants = (
+            len(self.embedders) * sum(m in _DENSE_MODES for m in self.retrieval_modes)
+            + sum(m == "sparse" for m in self.retrieval_modes)
+        )
         return (
-            len(self.embedders)
-            * len(self.chunkers)
-            * len(self.retrieval_modes)
+            len(self.chunkers)
+            * embedding_variants
             * len(self.rerankers)
             * len(self.budgets)
         )
@@ -83,6 +90,9 @@ class SweepResult:
         return sorted(self.metrics, key=key, reverse=True)
 
     def best(self, by: str = "hit_rate") -> ConfigMetrics | None:
+        """Return the winner only when aggregate verdicts are permitted."""
+        if self.validity.verdicts_suppressed:
+            return None
         ranked = self.ranked(by)
         return ranked[0] if ranked else None
 
@@ -115,16 +125,31 @@ def run_sweep(
 
     for ch_name, chunker in spec.chunkers.items():
         chunks = chunker.chunk_corpus(docs)
-        sparse = BM25Retriever().index(chunks)  # once per chunker
+        sparse = (
+            BM25Retriever().index(chunks)
+            if any(mode in _SPARSE_MODES for mode in spec.retrieval_modes)
+            else None
+        )  # once per chunker, only when needed
 
         # Parent-child chunkers return parents for retrieved children; the pipeline applies
         # this to every stage set. Duck-typed so any chunker exposing `expand` participates.
         return_expander = getattr(chunker, "expand", None)
 
-        for emb_name, embedder in spec.embedders.items():
-            dense = DenseRetriever(embedder).index(chunks)  # once per (embedder, chunker)
-
-            for mode in spec.retrieval_modes:
+        for mode in spec.retrieval_modes:
+            # Sparse retrieval has no embedding dimension. Run it once with an explicit
+            # empty embedder, retaining the first configured label for report compatibility
+            # instead of duplicating identical results for every dense model.
+            embedding_variants = (
+                spec.embedders.items()
+                if mode in _DENSE_MODES
+                else ((next(iter(spec.embedders), "none"), None),)
+            )
+            for emb_name, embedder in embedding_variants:
+                dense = (
+                    DenseRetriever(embedder).index(chunks)
+                    if mode in _DENSE_MODES and embedder is not None
+                    else None
+                )
                 for rr_name, reranker in spec.rerankers.items():
                     for budget in spec.budgets:
                         config = Config(

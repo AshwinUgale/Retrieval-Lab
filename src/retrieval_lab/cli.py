@@ -61,13 +61,15 @@ def _make_embedder(name: str, cache: EmbeddingCache):
     raise ValueError(f"unknown embed model {name!r} (use det, e5, or bge)")
 
 
-def _make_chunker(spec: str, embedder):
+def _make_chunker(spec: str, embedder=None):
     kind, _, rest = spec.partition(":")
     if kind == "fixed":
         return FixedSizeChunker(chunk_size=int(rest) if rest else 400)
     if kind == "recursive":
         return RecursiveChunker(chunk_size=int(rest) if rest else 400)
     if kind == "semantic":
+        if embedder is None:
+            raise ValueError("semantic chunking requires an embedding model")
         return SemanticChunker(embedder, breakpoint_percentile=float(rest) if rest else 75.0)
     if kind in ("parentchild", "parent-child"):
         parent, child = (rest.split("x") + ["300"])[:2] if rest else ("1200", "300")
@@ -94,9 +96,23 @@ def _make_reranker(name: str):
 
 def _build_spec(args: argparse.Namespace) -> SweepSpec:
     cache = EmbeddingCache()
-    embedders = {n: _make_embedder(n, cache) for n in _csv(args.embed_models)}
-    default_embedder = next(iter(embedders.values()))  # used for semantic boundary detection
-    chunkers = {c: _make_chunker(c, default_embedder) for c in _csv(args.chunkers)}
+    retrieval_modes = _csv(args.retrieval)
+    chunker_specs = _csv(args.chunkers)
+    # Fixed/recursive sparse retrieval needs no embedding model. Semantic chunking still
+    # needs one for boundary detection, even when retrieval itself is sparse.
+    needs_embedder = any(m in ("dense", "hybrid") for m in retrieval_modes)
+    needs_embedder = needs_embedder or any(
+        c.partition(":")[0] == "semantic" for c in chunker_specs
+    )
+    embedder_names = _csv(args.embed_models)
+    embedders = (
+        {n: _make_embedder(n, cache) for n in embedder_names}
+        if needs_embedder
+        # Preserve the configured label in sparse result ids without constructing the model.
+        else {embedder_names[0]: None}
+    )
+    default_embedder = next(iter(embedders.values()), None)
+    chunkers = {c: _make_chunker(c, default_embedder) for c in chunker_specs}
     rerankers = dict(_make_reranker(r) for r in _csv(args.rerank))
     budgets: list[int | None] = [None]
     if args.budget_tokens:
@@ -104,7 +120,7 @@ def _build_spec(args: argparse.Namespace) -> SweepSpec:
     return SweepSpec(
         embedders=embedders,
         chunkers=chunkers,
-        retrieval_modes=tuple(_csv(args.retrieval)),
+        retrieval_modes=tuple(retrieval_modes),
         rerankers=rerankers,
         top_k=args.top_k,
         candidate_n=args.candidate_n,
@@ -142,6 +158,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("\nCI: baseline broken (zero recall under all configs).", file=sys.stderr)
         return EXIT_QUALITY_GATE
     if args.fail_under is not None:
+        if sweep.validity.verdicts_suppressed:
+            print(
+                "\nCI: cannot evaluate --fail-under: query sample is below --min-sample.",
+                file=sys.stderr,
+            )
+            return EXIT_QUALITY_GATE
         best = sweep.best()
         if best is None or best.hit_rate < args.fail_under:
             got = 0.0 if best is None else best.hit_rate

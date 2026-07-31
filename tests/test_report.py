@@ -126,3 +126,17 @@ def test_html_report_renders_when_no_cost_and_single_config():
     )
     html = render_html(run_sweep(docs, queries, spec, min_sample=1))
     assert html.startswith("<!doctype html>") and "<svg" in html
+
+
+def test_html_does_not_declare_winner_below_minimum_sample():
+    docs, queries = build_basic_corpus()
+    spec = SweepSpec(
+        embedders={"det": DeterministicEmbedder(dim=512)},
+        chunkers={"fixed": FixedSizeChunker(chunk_size=400)},
+        retrieval_modes=("dense",),
+    )
+    html = render_html(run_sweep(docs, queries, spec, min_sample=len(queries) + 1))
+
+    assert ">BEST<" not in html
+    assert "Best on your query set" not in html
+    assert "no aggregate winner" in html

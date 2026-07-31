@@ -54,6 +54,26 @@ def test_fail_under_gate_exits_nonzero(demo, capsys):
     assert code == EXIT_QUALITY_GATE
 
 
+def test_fail_under_fails_closed_when_verdict_is_suppressed(demo, capsys):
+    docs, queries, _tmp = demo
+    code = main([
+        "run", "--corpus", str(docs), "--queries", str(queries),
+        "--min-sample", "100", "--fail-under", "0",
+    ])
+    assert code == EXIT_QUALITY_GATE
+    assert "cannot evaluate --fail-under" in capsys.readouterr().err
+
+
+def test_sparse_only_does_not_load_optional_embedding_model(demo):
+    docs, queries, _tmp = demo
+    # This succeeds without sentence-transformers because sparse retrieval does not use e5.
+    code = main([
+        "run", "--corpus", str(docs), "--queries", str(queries),
+        "--retrieval", "sparse", "--embed-models", "e5", "--min-sample", "1",
+    ])
+    assert code == EXIT_OK
+
+
 def test_offset_drift_fails_closed(demo, tmp_path):
     docs, _queries, _tmp = demo
     # A queries file whose quoted_text does not match the source -> fail closed, exit 2.

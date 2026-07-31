@@ -39,7 +39,8 @@ def load_beir(
     max_queries: int | None = None,
 ) -> DatasetImport:
     """Import a BEIR-format dataset (corpus + queries + qrels) into a ``DatasetImport``."""
-    # corpus: id -> Document (only passages referenced by kept qrels are emitted below)
+    # Keep the complete retrieval corpus, including non-relevant distractors. Qrels define
+    # gold only; filtering the corpus to qrel passages would make retrieval artificially easy.
     corpus: dict[str, str] = {}
     for line in _iter_jsonl(corpus_path):
         corpus[str(line["_id"])] = _passage_text(line)
@@ -52,7 +53,10 @@ def load_beir(
         if score >= min_score and cid in corpus:
             relevant[qid].append(cid)
 
-    documents: dict[str, Document] = {}
+    documents = {
+        cid: Document(id=cid, text=text)
+        for cid, text in corpus.items()
+    }
     queries: list[Query] = []
     skipped = {"no_relevant": 0, "unknown_query": 0}
 
@@ -65,8 +69,6 @@ def load_beir(
             text = corpus[cid]
             if not text:
                 continue
-            if cid not in documents:
-                documents[cid] = Document(id=cid, text=text)
             span = GoldSpan(cid, 0, len(text), quoted_text=text,
                             source_version=content_hash(text))
             alts.append(EvidenceSet((span,)))

@@ -482,12 +482,13 @@ def render_html(sweep: SweepResult, by: str = "hit_rate") -> str:
     ranked = sweep.ranked(by)
     embeds = {_parse_cfg(m.config_id)["embed"] for m in ranked}
     show_embed = len(embeds) > 1  # only show the embedder column when it varies
-    winner = ranked[0] if ranked else None
+    winner = sweep.best(by)
 
     rows = []
     for i, m in enumerate(ranked):
-        cls = " class=win" if i == 0 else ""
-        badge = '<span class=best>BEST</span>' if i == 0 else f"{i + 1}"
+        is_winner = winner is not None and m.config_id == winner.config_id
+        cls = " class=win" if is_winner else ""
+        badge = '<span class=best>BEST</span>' if is_winner else f"{i + 1}"
         frag = f'<span class=frag title="hits reconstructed across chunks — fragile">' \
                f'{m.fragmented_queries} fragile</span>' if m.fragmented_queries else ''
         rows.append(

@@ -93,6 +93,38 @@ def test_shared_cache_is_reused_across_configs():
     assert len(cache) > 0  # chunk + query embeddings were cached
 
 
+def test_sparse_only_sweep_does_not_use_or_duplicate_embedders():
+    class ExplodingEmbedder:
+        def embed_passage(self, _texts):
+            raise AssertionError("sparse retrieval must not build a dense index")
+
+    docs, queries = build_basic_corpus()
+    spec = SweepSpec(
+        embedders={"unused-a": ExplodingEmbedder(), "unused-b": ExplodingEmbedder()},
+        chunkers={"c": FixedSizeChunker(chunk_size=400)},
+        retrieval_modes=("sparse",),
+        top_k=3,
+        candidate_n=10,
+    )
+    result = run_sweep(docs, queries, spec, min_sample=1)
+
+    assert len(result.metrics) == spec.n_configs() == 1
+    assert result.metrics[0].config_id.startswith("unused-a|c|sparse|")
+
+
+def test_best_is_suppressed_below_minimum_sample():
+    docs, queries = build_basic_corpus()
+    spec = SweepSpec(
+        embedders={"det": DeterministicEmbedder(dim=512)},
+        chunkers={"c": FixedSizeChunker(chunk_size=400)},
+        retrieval_modes=("dense",),
+    )
+    result = run_sweep(docs, queries, spec, min_sample=len(queries) + 1)
+
+    assert result.validity.verdicts_suppressed
+    assert result.best() is None
+
+
 @pytest.mark.skipif(
     os.environ.get("RLAB_REAL_EMBED") != "1",
     reason="real embedder test is opt-in (needs a model download); set RLAB_REAL_EMBED=1",

@@ -8,6 +8,8 @@ exact or HNSW indexes. Each run produces a self-contained HTML report with ranke
 configurations, confidence intervals, failure attribution, cost measurements, filters, and
 quality-versus-context trade-offs.
 
+**[View the live 50-configuration benchmark report](https://ashwinugale.github.io/Retrieval-Lab/)**
+
 ## Why Retrieval Lab?
 
 Aggregate retrieval scores answer *which configuration won*. They do not explain *why a query

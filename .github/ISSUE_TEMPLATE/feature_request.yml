@@ -1,0 +1,28 @@
+name: Feature request / idea
+description: Suggest a chunker, reranker, embedder, importer, metric, or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem / use case
+      description: What are you trying to benchmark or diagnose that Retrieval Lab doesn't support yet?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed idea
+      description: A new chunker? reranker? embedder backend? dataset importer? report view? Rough is fine.
+  - type: checkboxes
+    id: kind
+    attributes:
+      label: Kind (optional)
+      options:
+        - label: New chunker
+        - label: New reranker
+        - label: New embedder backend
+        - label: New dataset importer
+        - label: New metric / attribution stage
+        - label: CLI / report / UX
+        - label: Docs / examples

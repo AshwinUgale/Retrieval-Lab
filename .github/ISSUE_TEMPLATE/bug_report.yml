@@ -1,0 +1,33 @@
+name: Bug report
+description: Something in Retrieval Lab is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for filing a bug! A small, ideally keyless reproduction (the `demo` corpus or a tiny docs/queries pair) helps most.
+  - type: input
+    id: version
+    attributes:
+      label: Retrieval Lab version
+      description: "`pip show retrieval-lab` version, or the commit."
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected, and what you got (paste the output).
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A tiny corpus + queries, or a command against `retrieval-lab demo` — offline if possible.
+      render: shell
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Python 3.12, macOS 14; extras: real-embed,ann"

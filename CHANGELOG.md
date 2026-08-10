@@ -6,7 +6,9 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
-- _Nothing yet._
+- Docs: the live demo report and README now state up front that the published benchmark is an
+  example run on a small synthetic API-documentation corpus, so a first-time visitor knows what
+  they are looking at.
 
 ## [0.1.0]
 

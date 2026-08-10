@@ -8,7 +8,9 @@ exact or HNSW indexes. Each run produces a self-contained HTML report with ranke
 configurations, confidence intervals, failure attribution, cost measurements, filters, and
 quality-versus-context trade-offs.
 
-**[View the live 50-configuration benchmark report](https://ashwinugale.github.io/Retrieval-Lab/)**
+**[View the live 50-configuration benchmark report](https://ashwinugale.github.io/Retrieval-Lab/)** — an
+example run on a small synthetic API-documentation corpus (22 documents, 400 labeled queries). It shows
+what Retrieval Lab produces; run it on your own corpus with the quick start below.
 
 ## Why Retrieval Lab?
 

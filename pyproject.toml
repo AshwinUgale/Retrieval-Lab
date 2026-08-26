@@ -31,6 +31,8 @@ dependencies = [
 [project.optional-dependencies]
 # Real embedding models (e5, bge, ...). Large downloads; opt-in.
 real-embed = ["sentence-transformers>=2.2"]
+# Hosted embedding APIs such as OpenAI. Requires provider credentials at runtime.
+api-embed = ["openai>=1.0"]
 # Cross-encoder reranking.
 rerank = ["sentence-transformers>=2.2"]
 # Approximate nearest-neighbour dense index.

@@ -13,6 +13,8 @@ __all__ = [
     "SentenceTransformerEmbedder",
     "e5_embedder",
     "bge_embedder",
+    "OpenAIEmbedder",
+    "openai_embedder",
 ]
 
 
@@ -21,4 +23,8 @@ def __getattr__(name: str):
         from retrieval_lab.embedding import sentence_transformer as _st
 
         return getattr(_st, name)
+    if name in {"OpenAIEmbedder", "openai_embedder"}:
+        from retrieval_lab.embedding import api as _api
+
+        return getattr(_api, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

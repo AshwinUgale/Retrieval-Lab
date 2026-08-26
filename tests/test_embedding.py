@@ -1,8 +1,10 @@
 """Phase 1 — the keyless deterministic embedder + content-addressed cache (spec §I.7)."""
 
 import numpy as np
+import pytest
 
 from retrieval_lab.embedding import DeterministicEmbedder, EmbeddingCache
+from retrieval_lab.embedding.api import OpenAIEmbedder
 
 
 def cos(a, b):
@@ -72,3 +74,52 @@ def test_empty_input_returns_empty_matrix():
     e = DeterministicEmbedder(dim=32)
     out = e.embed([])
     assert out.shape == (0, 32)
+
+
+def test_openai_embedder_uses_injected_client_and_cache():
+    class FakeEmbeddings:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            vectors = [[1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+            return type(
+                "EmbeddingResponse",
+                (),
+                {"data": [type("Embedding", (), {"embedding": v}) for v in vectors]},
+            )()
+
+    class FakeClient:
+        def __init__(self):
+            self.embeddings = FakeEmbeddings()
+
+    client = FakeClient()
+    cache = EmbeddingCache()
+    embedder = OpenAIEmbedder("text-embedding-3-small", cache=cache, client=client, dim=3)
+
+    first = embedder.embed(["alpha", "beta"])
+    second = embedder.embed(["alpha", "beta"])
+
+    assert len(client.embeddings.calls) == 1
+    assert client.embeddings.calls[0]["model"] == "text-embedding-3-small"
+    assert client.embeddings.calls[0]["input"] == ["alpha", "beta"]
+    assert np.array_equal(first, second)
+    assert np.allclose(np.linalg.norm(first, axis=1), 1.0)
+    assert len(cache) == 2
+
+
+def test_openai_embedder_missing_extra_is_actionable(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "openai":
+            raise ImportError("missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(ImportError, match=r"\[api-embed\]"):
+        OpenAIEmbedder()

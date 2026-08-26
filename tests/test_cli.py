@@ -116,6 +116,16 @@ def test_unknown_embed_model_is_an_error(demo, capsys):
     assert "unknown embed model" in capsys.readouterr().err
 
 
+def test_api_embed_model_missing_extra_is_a_clean_input_error(demo, capsys):
+    docs, queries, _tmp = demo
+    code = main([
+        "run", "--corpus", str(docs), "--queries", str(queries),
+        "--embed-models", "api:text-embedding-3-small", "--min-sample", "1",
+    ])
+    assert code == EXIT_INPUT_ERROR
+    assert "retrieval-lab[api-embed]" in capsys.readouterr().err
+
+
 def test_run_writes_html(demo, tmp_path):
     docs, queries, _tmp = demo
     html = tmp_path / "report.html"

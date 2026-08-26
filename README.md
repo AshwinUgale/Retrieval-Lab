@@ -54,6 +54,15 @@ retrieval-lab run \
   --html report.html
 ```
 
+To compare a hosted embedding model, install the API extra and select an `api:` model. The
+OpenAI client reads credentials from `OPENAI_API_KEY`.
+
+```bash
+pip install "retrieval-lab[api-embed]"
+retrieval-lab run --corpus docs.jsonl --queries queries.jsonl \
+  --embed-models api:text-embedding-3-small
+```
+
 Open `report.html` directly in a browser. It has no server or external frontend dependencies,
 supports light and dark themes, and remains usable without network access.
 
@@ -189,6 +198,7 @@ retrieval-lab geometry --corpus docs.jsonl --embed-model e5
 
 - `retrieval-lab`: lightweight core with NumPy and the deterministic embedder
 - `retrieval-lab[real-embed]`: E5 and BGE through sentence-transformers
+- `retrieval-lab[api-embed]`: hosted OpenAI embedding models via `api:<model>`
 - `retrieval-lab[rerank]`: cross-encoder reranking
 - `retrieval-lab[ann]`: HNSW approximate dense indexes
 - `retrieval-lab[dev]`: pytest and Ruff for development
@@ -200,6 +210,8 @@ Python 3.10–3.12 is supported.
 - Results are only as representative as the labeled query set.
 - Missing valid gold alternatives make measured recall a lower bound.
 - Latency and index cost depend on the machine running the benchmark.
+- Hosted API embedders depend on provider availability, pricing, rate limits, and the API key
+  available in the local environment.
 - Stage attribution requires a decomposable retrieval pipeline; black-box retrievers can only
   be scored at their observable output.
 

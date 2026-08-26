@@ -50,6 +50,13 @@ def _csv(value: str) -> list[str]:
 def _make_embedder(name: str, cache: EmbeddingCache):
     if name in ("det", "det-hash"):
         return DeterministicEmbedder(dim=2048, name=name, cache=cache)
+    if name.startswith("api:"):
+        from retrieval_lab.embedding import openai_embedder
+
+        model = name.split(":", 1)[1]
+        emb = openai_embedder(model, cache=cache)
+        emb.name = name
+        return emb
     if name in ("e5", "bge"):
         from retrieval_lab.embedding import bge_embedder, e5_embedder
 
@@ -58,7 +65,7 @@ def _make_embedder(name: str, cache: EmbeddingCache):
         # Re-key under the short CLI name so config ids stay readable.
         emb.name = name
         return emb
-    raise ValueError(f"unknown embed model {name!r} (use det, e5, or bge)")
+    raise ValueError(f"unknown embed model {name!r} (use det, e5, bge, or api:<model>)")
 
 
 def _make_chunker(spec: str, embedder=None):
@@ -310,7 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="sweep configs over a corpus + query set")
     run.add_argument("--corpus", required=True, help="documents JSONL ({id, text, meta?})")
     run.add_argument("--queries", required=True, help="queries JSONL (with source-span gold)")
-    run.add_argument("--embed-models", default="det", help="csv: det,e5,bge")
+    run.add_argument("--embed-models", default="det", help="csv: det,e5,bge,api:<model>")
     run.add_argument(
         "--chunkers",
         default="fixed",
@@ -392,7 +399,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     geometry = sub.add_parser("geometry", help="embedding-space diagnostics (risk indicators)")
     geometry.add_argument("--corpus", required=True, help="documents JSONL")
-    geometry.add_argument("--embed-model", default="det", help="det, e5, or bge")
+    geometry.add_argument("--embed-model", default="det", help="det, e5, bge, or api:<model>")
     geometry.add_argument("--chunker", default="fixed", help="chunker for the corpus vectors")
     geometry.add_argument("--queries", default=None, help="optional queries JSONL for mismatch")
     geometry.set_defaults(func=_cmd_geometry)

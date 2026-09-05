@@ -52,6 +52,7 @@ from retrieval_lab.retrieval import (
     CrossEncoderReranker,
     DenseRetriever,
     LexicalReranker,
+    MMRReranker,
     Reranker,
 )
 
@@ -93,7 +94,7 @@ __all__ = [
     "Embedder", "DeterministicEmbedder", "EmbeddingCache",
     # Retrievers / rerankers
     "DenseRetriever", "BM25Retriever", "ANNDenseRetriever",
-    "Reranker", "LexicalReranker", "CrossEncoderReranker",
+    "Reranker", "LexicalReranker", "MMRReranker", "CrossEncoderReranker",
     # Workflow
     "SweepSpec", "SweepResult", "run_sweep", "RetrievalPipeline", "evaluate_query",
     "ConfigMetrics", "ANNDiagnostic",

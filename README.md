@@ -112,7 +112,8 @@ several answers is acceptable.
 - **Chunking:** fixed-size, recursive, semantic, and parent-child
 - **Embedding:** local E5 and BGE models, plus a deterministic offline test embedder
 - **Retrieval:** exact dense, BM25 sparse, or hybrid retrieval with reciprocal rank fusion
-- **Reranking:** none, lexical overlap, or a sentence-transformers cross-encoder
+- **Reranking:** none, lexical overlap, dependency-free MMR diversity (`mmr[:lambda]`), or a
+  sentence-transformers cross-encoder
 - **Cutoffs:** candidate count, final top-k, and optional context-token budget
 - **Dense index:** exact search or HNSW approximate nearest-neighbor search
 

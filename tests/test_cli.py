@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from retrieval_lab.cli import EXIT_INPUT_ERROR, EXIT_OK, EXIT_QUALITY_GATE, main
+from retrieval_lab.cli import EXIT_INPUT_ERROR, EXIT_OK, EXIT_QUALITY_GATE, _make_reranker, main
 from retrieval_lab.corpora.constructed import dump_basic_corpus_jsonl
 
 
@@ -30,6 +30,33 @@ def test_run_writes_json_and_exits_ok(demo, capsys):
     assert len(data["metrics"]) == 4  # 1 embed x 2 chunk x 2 mode
     report = capsys.readouterr().out
     assert "Retrieval Lab" in report
+
+
+def test_mmr_reranker_cli_selector_supports_default_and_custom_lambda():
+    default_name, default = _make_reranker("mmr")
+    custom_name, custom = _make_reranker("mmr:0.7")
+
+    assert default_name == "mmr"
+    assert default.lambda_ == 0.5
+    assert custom_name == "mmr:0.7"
+    assert custom.lambda_ == 0.7
+
+
+def test_mmr_reranker_runs_in_sweep_and_html_report(demo):
+    docs, queries, tmp = demo
+    output = tmp / "mmr.json"
+    html = tmp / "mmr.html"
+
+    code = main([
+        "run", "--corpus", str(docs), "--queries", str(queries),
+        "--rerank", "none,mmr", "--top-k", "3", "--candidate-n", "10",
+        "--min-sample", "1", "--json", str(output), "--html", str(html),
+    ])
+
+    assert code == EXIT_OK
+    config_ids = [metric["config_id"] for metric in json.loads(output.read_text())["metrics"]]
+    assert any("rerank=mmr" in config_id for config_id in config_ids)
+    assert "data-rerank=\"mmr\"" in html.read_text()
 
 
 def test_explain_and_pareto_read_the_run_json(demo, capsys):

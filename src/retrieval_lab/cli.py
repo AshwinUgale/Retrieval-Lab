@@ -35,7 +35,7 @@ from retrieval_lab.report import (
     write_html,
     write_json,
 )
-from retrieval_lab.retrieval import LexicalReranker
+from retrieval_lab.retrieval import LexicalReranker, MMRReranker
 from retrieval_lab.sweep import SweepSpec, run_sweep
 
 EXIT_OK = 0
@@ -92,13 +92,19 @@ def _make_reranker(name: str):
         return None, None
     if name == "lexical":
         return "lexical", LexicalReranker()
+    if name == "mmr" or name.startswith("mmr:"):
+        lambda_ = float(name.split(":", 1)[1]) if ":" in name else 0.5
+        reranker = MMRReranker(lambda_)
+        return reranker.name, reranker
     if name == "ce" or name.startswith("ce:"):
         from retrieval_lab.retrieval import CrossEncoderReranker
 
         # `ce` = default cross-encoder; `ce:<model>` = a specific HuggingFace model.
         model = name.split(":", 1)[1] if ":" in name else "cross-encoder/ms-marco-MiniLM-L-6-v2"
         return name, CrossEncoderReranker(model)
-    raise ValueError(f"unknown reranker {name!r} (use none, lexical, ce, or ce:<model>)")
+    raise ValueError(
+        f"unknown reranker {name!r} (use none, lexical, mmr[:lambda], ce, or ce:<model>)"
+    )
 
 
 def _build_spec(args: argparse.Namespace) -> SweepSpec:
@@ -343,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=100,
         help="labeled queries sampled for HNSW-vs-exact candidate recall",
     )
-    run.add_argument("--rerank", default="none", help="csv: none,lexical,ce")
+    run.add_argument("--rerank", default="none", help="csv: none,lexical,mmr[:lambda],ce")
     run.add_argument("--top-k", type=int, default=5)
     run.add_argument("--candidate-n", type=int, default=50)
     run.add_argument("--budget-tokens", default="", help="csv of token budgets, e.g. 2000,4000")

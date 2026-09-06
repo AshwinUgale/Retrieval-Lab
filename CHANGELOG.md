@@ -6,6 +6,8 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- Added a deterministic, dependency-free MMR reranker with `mmr` and `mmr:<lambda>` CLI
+  selectors for measuring relevance/diversity trade-offs in retrieval sweeps.
 - Added an optional `[api-embed]` extra and `api:<model>` CLI selector for hosted OpenAI
   embedding models, while keeping the default install and tests keyless.
 - Docs: the live demo report and README now state up front that the published benchmark is an
